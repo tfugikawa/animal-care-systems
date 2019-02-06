@@ -8,6 +8,9 @@ boolean newData = false;
 int desiredPos;
 int currentPos = 1;
 
+int encoderPos; // position of encoder
+int encoderPrev; //previous position of encoder
+
 
 // Define Control Pins, all are arbitrary for right now
 const int stepPin = 5; 
@@ -16,6 +19,7 @@ const int enPin = 8;
 // Define Encoder Pins, use both interrupt pins
 const int outputA = 2;
 const int outputB = 3;
+const int outputZ = 6;
 // Define Emergency Stop Pins
 const int emergencyPin = 10;
 
@@ -29,6 +33,7 @@ void setup() {
   // Configure Encoder Pins
   pinMode (outputA,INPUT_PULLUP);
   pinMode (outputB,INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(outputA), updateEncoder, FALLING);
   // Setup Communication
   Serial.begin(9600);
   while(!Serial){
@@ -51,6 +56,8 @@ void loop() {
   currentPos = desiredPos;
   Serial.print("Current Position:");
   Serial.println(currentPos);
+  
+  dispEncoder();
 }
 
 //------------------------------------------------------------------------------------
@@ -134,6 +141,26 @@ void deccel(){
     varRate+= 5; // delay by 33326/2 microSeconds less each time (maximum to meet acceleration standards);
   }
 }
+
+void updateEncoder(){
+  encoderPos += (2*digitalRead(outputB)-1);
+  if(digitalRead(outputZ)==1){
+    encoderPos = 0;
+  }
+}
+
+void dispEncoder(){
+//Displays encoder information to the serial. This should only be used while testing.
+  if(encoderPrev!=encoderPos){
+    zState = digitalRead(outputZ);
+    Serial.print("outputZ: ");
+    Serial.print(zState);
+    Serial.print("     Position: ");
+    Serial.println(counter);
+    encoderPrev = encoderPos;
+  }
+}
+
 
 //void checkEmergencyStop(){
 //  //for unintended stopping, set enable pin to HIGH
