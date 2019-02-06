@@ -8,8 +8,7 @@ boolean newData = false;
 int desiredPos;
 int currentPos = 0;
 
-int encoderPos = 0; // position of encoder
-int encoderPosLow = 0;
+int encoderPos = 0; //position of encoder
 int encoderPrev; //previous position of encoder
 
 
@@ -17,7 +16,7 @@ int encoderPrev; //previous position of encoder
 const int stepPin = 5;
 const int dirPin = 4;
 const int enPin = 8;
-// Define Encoder Pins, use both interrupt pins
+// Define Encoder Pins, only one (A for current implementation) required to be an interrupt
 const int outputA = 2;
 const int outputB = 3;
 const int outputZ = 6;
@@ -35,7 +34,6 @@ void setup() {
   pinMode (outputA, INPUT_PULLUP);
   pinMode (outputB, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(outputA), updateEncoder, CHANGE);
-  encoderPos = 0;
   // Setup Communication
   Serial.begin(9600);
   while (!Serial) {
@@ -49,11 +47,14 @@ void loop() {
     //Wait until data is recieved from web page
     desiredPos = recvData();
   }
+  
+  //this block is run if the input was 'R' for "Resetting" position data
+  //this should only be kept for testing purposes
   if(desiredPos == 17){
     encoderPos = 0;
-    encoderPosLow = 0;
     desiredPos = 0;
     currentPos = 0;
+    Serial.println("Positions reset");
   }
   
   Serial.print("Recieved: ");
@@ -61,16 +62,30 @@ void loop() {
   newData = false; // reset serial perform operation based upon input
   // perform operations based on desired Position, use getDir()
   int num = getDir();
+  
+  
+  
+  //run if input was '[' or ']' for one full IJABC or one full CBAJI rotation
+  //this should only be kept for testing purposes
+  //whether the pins should be high or low requires testing
+  /*
+  if(desiredPos == 26){
+    digitalWrite(dirPin, HIGH);
+    num = 10;
+  }else if(desiredPos == 28){
+    digitalWrite(dirPin, LOW);
+    num = 10;
+  }
+  */
+  
   moveCage(num);
   currentPos = desiredPos;
   Serial.print("Current Position:");
   Serial.println(currentPos);
 
-  //dispEncoder();
-  Serial.print("encoderPos: ");
-  //Serial.println(encoderPos);
-  Serial.println(encoderPosLow);
-  Serial.println();
+  //dispEncoder(true);
+  //dispEncoder(false);
+  
 }
 
 //------------------------------------------------------------------------------------
@@ -80,7 +95,7 @@ char recvData() {
   if (Serial.available() > 0) {
     byte datain = Serial.read(); //Reads new data from serial
     newData = true;
-    return int(datain) - 65; // conversion form ASCI to int
+    return int(datain) - 65; // conversion from ASCII to int
   }
 }
 
@@ -118,6 +133,8 @@ int getDir() {
 void moveCage(int numCages) {
   //Code for moving the equivalent of one cage
   if (numCages > 0) {
+    //digitalWrite(enPin, LOW);
+    
     accel();
     unsigned long var = 3 * numSteps * numCages / 10 - 5600; //=numSteps*numCages*3 - 40...3* gear ratio - 40 steps form acceleration and deceleration
     for (unsigned long j = 0; j < var; j++) { //40 steps form acceleration and deceleration
@@ -127,8 +144,10 @@ void moveCage(int numCages) {
       delayMicroseconds(stepInterval);
     }
     deccel();
+    
+    //delayMicroseconds( <<TBD experimentally? Might be unnecessary based on the behavior of deccel()>> );
+    //digitalWrite(enPin, HIGH);
   }
-  //return 0;
 }
 
 void accel() {
@@ -156,37 +175,35 @@ void deccel() {
 }
 
 void updateEncoder() {
-  
-  //Serial.print(encoderPos);
-  int a = digitalRead(outputA);
-  int b = digitalRead(outputB);
-
-  if(a == 0){
-    encoderPosLow -= 2*b-1;
+  //using interrupt mode "CHANGE" with a check for low A has a better accuracy than using mode FALLING for YUMO rotary encoder E6A2-CW3C
+  if(digitalRead(outputA) == 0){
+    endocerPrev = encoderPos;
+    //If B is high when A changes to low, CW, which is negative
+    encoderPos -= 2*digitalRead(outputB)-1;
   }
-  
   /*
-  if (digitalRead(outputZ) == 1) {
+  if (digitalRead(outputZ) == 1) { //unsure if Z is high or low when it is active, requires testing
     encoderPos = 0;
   }
   */
 }
 
-void dispEncoder() {
-  //Displays encoder information to the serial. This should only be used while testing.
-  if (encoderPrev != encoderPos) {
-    int zState = digitalRead(outputZ);
+void dispEncoder(boolean outZ) {
+  //Displays encoder information to the serial. This only needs to be used while testing.
+  if(outZ) {
     Serial.print("outputZ: ");
-    Serial.print(zState);
-    Serial.print("     Position: ");
-    Serial.println(encoderPos);
-    encoderPrev = encoderPos;
+    Serial.println(digitalRead(outputZ));
   }
+  Serial.print("encoderPos: ");
+  Serial.println(encoderPos);
+  Serial.println();
 }
 
 
 //void checkEmergencyStop(){
 //  //for unintended stopping, set enable pin to HIGH
+//  //this is for when something is holding the motor in place
+//  //undecided if this is where checking for a stop button press should occur
 //}
 //
 //void positionEncoder(){
