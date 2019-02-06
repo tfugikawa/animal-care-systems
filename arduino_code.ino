@@ -68,7 +68,7 @@ void loop() {
   //run if input was '[' or ']' for one full IJABC or one full CBAJI rotation
   //this should only be kept for testing purposes
   //whether the pins should be high or low requires testing
-  /*
+  
   if(desiredPos == 26){
     digitalWrite(dirPin, HIGH);
     num = 10;
@@ -76,7 +76,7 @@ void loop() {
     digitalWrite(dirPin, LOW);
     num = 10;
   }
-  */
+  
   
   moveCage(num);
   currentPos = desiredPos;
