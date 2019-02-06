@@ -66,17 +66,28 @@ void loop() {
   
   
   //run if input was '[' or ']' for one full IJABC or one full CBAJI rotation
+  // '<' for nudge ABC and '>' for nudge CBA
   //this should only be kept for testing purposes
-  //whether the pins should be high or low requires testing
+  //whether the direction pins should be high or low requires testing
+  //it is assumed that the enable pin is correct
   
-  if(desiredPos == 26){
+  if(desiredPos == 26){ //[
     digitalWrite(dirPin, HIGH);
     num = 10;
-  }else if(desiredPos == 28){
+  }else if(desiredPos == 28){ //]
     digitalWrite(dirPin, LOW);
     num = 10;
+  }else if(desiredPos == -5){ //<
+    digitalWrite(dirPin, HIGH);
+    num = 0;
+    accel();
+    deccel();
+  }else if(desiredPos == -3){ //>
+    digitalWrite(dirPin, LOW);
+    num = 0;
+    accel();
+    deccel();
   }
-  
   
   moveCage(num);
   currentPos = desiredPos;
