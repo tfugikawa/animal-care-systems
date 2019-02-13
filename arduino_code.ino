@@ -71,18 +71,18 @@ void loop() {
   //whether the direction pins should be high or low requires testing
   //it is assumed that the enable pin is correct
   
-  if(desiredPos == 26){ //[
+  if(desiredPos == 26){ // [
     digitalWrite(dirPin, HIGH);
     num = 10;
-  }else if(desiredPos == 28){ //]
+  }else if(desiredPos == 28){ // ]
     digitalWrite(dirPin, LOW);
     num = 10;
-  }else if(desiredPos == -5){ //<
+  }else if(desiredPos == -5){ // <
     digitalWrite(dirPin, HIGH);
     num = 0;
     accel();
     deccel();
-  }else if(desiredPos == -3){ //>
+  }else if(desiredPos == -3){ // >
     digitalWrite(dirPin, LOW);
     num = 0;
     accel();
@@ -188,7 +188,7 @@ void deccel() {
 void updateEncoder() {
   //using interrupt mode "CHANGE" with a check for low A has a better accuracy than using mode FALLING for YUMO rotary encoder E6A2-CW3C
   if(digitalRead(outputA) == 0){
-    endocerPrev = encoderPos;
+    encoderPrev = encoderPos;
     //If B is high when A changes to low, CW, which is negative
     encoderPos -= 2*digitalRead(outputB)-1;
   }
