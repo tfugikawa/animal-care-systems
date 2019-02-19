@@ -3,7 +3,7 @@ unsigned long numSteps = 20000; // Microstepping
 unsigned int stepInterval = 100; // Used for delayMicroseconds, controls max speed (30 degrees per second)
 unsigned int varRate = 800;//62500;//Acceleration function used for rampup and rampdown (125000/2) This is a 125 ms frequency starting pulse (only moves 10 steps)
 //const int accelRate = 2000; // Number of milliseconds for acceleration, used also for decceleration
-boolean eStop = false; // Logic for determining whether or not to stop
+boolean eStop = false; // Logic for determining whether or not to cut the power
 boolean newData = false;
 int desiredPos;
 int currentPos = 0;
@@ -33,7 +33,10 @@ void setup() {
   // Configure Encoder Pins
   pinMode (outputA, INPUT_PULLUP);
   pinMode (outputB, INPUT_PULLUP);
+  //pinMode(outputZ, INPUT_PULLUP); // test to see if this should be INPUT, INPUT_PULLUP, or something else
   attachInterrupt(digitalPinToInterrupt(outputA), updateEncoder, CHANGE);
+  // Configure Emergency Pins
+  pinMode(emergencyPin, OUTPUT);
   // Setup Communication
   Serial.begin(9600);
   while (!Serial) {
@@ -46,7 +49,10 @@ void loop() {
   while (newData == false) {
     //Wait until data is recieved from web page
     desiredPos = recvData();
+    checkEStop();
   }
+  
+  checkEStop();
   
   //this block is run if the input was 'R' for "Resetting" position data
   //this should only be kept for testing purposes
@@ -186,12 +192,10 @@ void dispEncoder(boolean outZ) {
 }
 
 
-//void checkEmergencyStop(){
-//  //for unintended stopping, set enable pin to HIGH
-//  //this is for when something is holding the motor in place
-//  //undecided if this is where checking for a stop button press should occur
-//}
-//
+void checkEStop(){
+  eStop = false;
+}
+
 //void positionEncoder(){
 //  //gets the position of the encoder, will always be running
 //  //used to get errors if large discrepancy, and track when enable pin is HIGH
