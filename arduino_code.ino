@@ -24,6 +24,17 @@ const int outputZ = 6;
 const int emergencyPin = 10;
 
 
+// Movement variables (to be changed by testing)
+const int accRateMax = 800; //time delay, so larger numbers are slower
+const int accRateMin = 100;
+const int accRateSteps = 20; //steps at each time delay
+const int accRateDelta = 5; //change in time delay
+const int decRateMax = 800;
+const int decRateMin = 100;
+const int decRateStep = 20;
+const int decRateDelta = 5;
+
+
 void setup() {
   // Configure Control Pins
   pinMode(stepPin, OUTPUT);
@@ -163,26 +174,28 @@ void moveCage(int numCages) {
 }
 
 void accel() {
-  while (varRate > 100) {
-    for (int i = 0; i < 20; i++) {
+  varRate = accRateMax;
+  while (varRate > accRateMin) {
+    for (int i = 0; i < accRateSteps; i++) {
       digitalWrite(stepPin, HIGH);
       delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
       delayMicroseconds(varRate);
     }
-    varRate -= 5;
+    varRate -= accRateDelta;
   }
 }
 
 void deccel() {
-  while (varRate < 800) {
-    for (int i = 0; i < 20; i++) {
+  varRate = decRateMin;
+  while (varRate < decRateMax) {
+    for (int i = 0; i < decRateSteps; i++) {
       digitalWrite(stepPin, HIGH);
       delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
       delayMicroseconds(varRate);
     }
-    varRate += 5; // delay by 33326/2 microSeconds less each time (maximum to meet acceleration standards);
+    varRate += decRateDelta; // delay by 33326/2 microSeconds less each time (maximum to meet acceleration standards);
   }
 }
 
