@@ -49,8 +49,8 @@ void loop() {
   }
   
   //this block is run if the input was 'R' for "Resetting" position data
-  //this should only be kept for testing purposes
-  if(desiredPos == 17){
+  //this should only be kept for testing purposes, as the encoder should not be manually reset
+  if(desiredPos == 17){ // R
     encoderPos = 0;
     desiredPos = 0;
     currentPos = 0;
@@ -62,32 +62,6 @@ void loop() {
   newData = false; // reset serial perform operation based upon input
   // perform operations based on desired Position, use getDir()
   int num = getDir();
-  
-  
-  
-  //run if input was '[' or ']' for one full IJABC or one full CBAJI rotation
-  // '<' for nudge ABC and '>' for nudge CBA
-  //this should only be kept for testing purposes
-  //whether the direction pins should be high or low requires testing
-  //it is assumed that the enable pin is correct
-  
-  if(desiredPos == 26){ // [
-    digitalWrite(dirPin, HIGH);
-    num = 10;
-  }else if(desiredPos == 28){ // ]
-    digitalWrite(dirPin, LOW);
-    num = 10;
-  }else if(desiredPos == -5){ // <
-    digitalWrite(dirPin, HIGH);
-    num = 0;
-    accel();
-    deccel();
-  }else if(desiredPos == -3){ // >
-    digitalWrite(dirPin, LOW);
-    num = 0;
-    accel();
-    deccel();
-  }
   
   moveCage(num);
   currentPos = desiredPos;
@@ -115,6 +89,26 @@ int getDir() {
   // flips dirPin HIGH or LOW
   // used in combination with moveCage
 
+  //run if input was '[' or ']' for one full IJABC or one full CBAJI rotation
+  // '<' for nudge ABC and '>' for nudge CBA (subject to change)
+  //this should only be kept for testing purposes
+  //whether the direction pins should be high or low requires testing
+  //it is assumed that the enable pin is correct
+  
+  if(desiredPos == 26){ // [
+    digitalWrite(dirPin, HIGH);
+    return 10;
+  }else if(desiredPos == 28){ // ]
+    digitalWrite(dirPin, LOW);
+    return 10;
+  }else if(desiredPos == -5){ // <
+    digitalWrite(dirPin, HIGH);
+    return -99;
+  }else if(desiredPos == -3){ // >
+    digitalWrite(dirPin, LOW);
+    return -99;
+  }
+  
   // Need to:
   // Map A -- J to 0 -- 9
   // Case 1:
@@ -122,6 +116,7 @@ int getDir() {
   // if (desiredPos + 10 - currentPos)>0 && (desiredPos - currentPos)<0 ==> counter-clockwise
   // also check sign, one will be if both positive, vs opposite sign
   // also check for magnitide.
+  
   int diff = desiredPos - currentPos;
   if (diff > 5) {
     digitalWrite(dirPin, LOW);
@@ -144,6 +139,7 @@ int getDir() {
 void moveCage(int numCages) {
   //Code for moving the equivalent of one cage
   if (numCages > 0) {
+    
     //digitalWrite(enPin, LOW);
     
     accel();
@@ -156,9 +152,14 @@ void moveCage(int numCages) {
     }
     deccel();
     
-    //delayMicroseconds( <<TBD experimentally? Might be unnecessary based on the behavior of deccel()>> );
-    //digitalWrite(enPin, HIGH);
+    
+  }else if(numCages == -99){
+    //nudge left or right depending on current stepPin value
+    accel();
+    deccel();
   }
+  //delayMicroseconds( <<TBD experimentally? Might be unnecessary based on the behavior of deccel()>> );
+  //digitalWrite(enPin, HIGH);
 }
 
 void accel() {
@@ -191,6 +192,7 @@ void updateEncoder() {
     encoderPrev = encoderPos;
     //If B is high when A changes to low, CW, which is negative
     encoderPos -= 2*digitalRead(outputB)-1;
+    encoderPos = encoderPos%200;
   }
   /*
   if (digitalRead(outputZ) == 1) { //unsure if Z is high or low when it is active, requires testing
@@ -216,12 +218,6 @@ void dispEncoder(boolean outZ) {
 //  //this is for when something is holding the motor in place
 //  //undecided if this is where checking for a stop button press should occur
 //}
-//
-//void positionEncoder(){
-//  //gets the position of the encoder, will always be running
-//  //used to get errors if large discrepancy, and track when enable pin is HIGH
-//}
-//
 //void reset(){
 //  // resets all non-position variables to the original values
 //  // need to check for name collisions before calling this "reset"
