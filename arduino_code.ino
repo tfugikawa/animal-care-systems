@@ -10,7 +10,7 @@ int currentPos = 0;
 
 int encoderPos = 0; //position of encoder
 int encoderPrev; //previous position of encoder
-
+int emerPos = 0;
 
 // Define Control Pins, all are arbitrary for right now
 const int stepPin = 5;
@@ -23,6 +23,7 @@ const int outputZ = 6;
 // Define Emergency Stop Pins
 const int emergencyPin = 10;
 
+const int eSensitivity = 50; //encoder is 200 steps: check every "eSens"th of a rev
 
 void setup() {
   // Configure Control Pins
@@ -49,10 +50,8 @@ void loop() {
   while (newData == false) {
     //Wait until data is recieved from web page
     desiredPos = recvData();
-    checkEStop();
   }
   
-  checkEStop();
   
   //this block is run if the input was 'R' for "Resetting" position data
   //this should only be kept for testing purposes
@@ -134,6 +133,10 @@ void moveCage(int numCages) {
       delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
       delayMicroseconds(stepInterval);
+      
+      if(j%(3*numSteps/eSensitivity){
+        checkEStop();
+      }
     }
     deccel();
     
@@ -193,14 +196,21 @@ void dispEncoder(boolean outZ) {
 
 
 void checkEStop(){
-  eStop = false;
+  int pinState = digitalRead(dirPin);
+  bool pS = (pinState==1);
+  if(pS && (((emerPos-encoderPos)%200)<=1)){ // change the 1 as necessary. check if pS should be true or false for this case
+    eStop = true;
+    digitalWrite(emergencyPin,HIGH);
+  }else if(!pS && (((encoderPos-emerPos)%200)<=1)){ // change the 1 as necessary. check if pS should be true or false for this case
+    eStop = true;
+    digitalWrite(emergencyPin,HIGH);
+  }else{
+    eStop = false;
+    emerPos = encoderPos;
+  }
 }
 
-//void positionEncoder(){
-//  //gets the position of the encoder, will always be running
-//  //used to get errors if large discrepancy, and track when enable pin is HIGH
-//}
-//
+
 //void reset(){
 //  // resets all non-position variables to the original values
 //  // need to check for name collisions before calling this "reset"
