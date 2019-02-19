@@ -34,6 +34,10 @@ const int decRateMin = 100;
 const int decRateStep = 20;
 const int decRateDelta = 5;
 
+const int accTotalSteps = (int)(1.0*(accRateMax-accRateMin)/accRateDelta)*accRateSteps;
+const int decTotalSteps = (int)(1.0*(decRateMax-decRateMin)/decRateDelta)*decRateSteps;
+const int accDecSteps = accTotalSteps+decTotalSteps;
+
 
 void setup() {
   // Configure Control Pins
@@ -150,12 +154,11 @@ int getDir() {
 void moveCage(int numCages) {
   //Code for moving the equivalent of one cage
   if (numCages > 0) {
-    
     //digitalWrite(enPin, LOW);
     
     accel();
-    unsigned long var = 3 * numSteps * numCages / 10 - 5600; //=numSteps*numCages*3 - 40...3* gear ratio - 40 steps form acceleration and deceleration
-    for (unsigned long j = 0; j < var; j++) { //40 steps form acceleration and deceleration
+    unsigned long var = 3 * numSteps * numCages / 10 - accDecSteps; //=numSteps*numCages*3 - 40...3* gear ratio - 40 steps from acceleration and deceleration
+    for (unsigned long j = 0; j < var; j++) { //40 steps from acceleration and deceleration
       digitalWrite(stepPin, HIGH);
       delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
@@ -163,9 +166,12 @@ void moveCage(int numCages) {
     }
     deccel();
     
-    
   }else if(numCages == -99){
     //nudge left or right depending on current stepPin value
+    
+    //replace this with custom movement? put that in new function (e.g. "nudge()")?
+    //or add custom accel(int) and deccel(int)?
+    
     accel();
     deccel();
   }
