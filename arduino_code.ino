@@ -25,17 +25,17 @@ const int emergencyPin = 10;
 
 
 // Movement variables (to be changed by testing)
-const int accRateMax = 800; //time delay, so larger numbers are slower
-const int accRateMin = 100;
-const int accRateSteps = 20; //steps at each time delay
-const int accRateDelta = 5; //change in time delay
+const int accRateMax = 800; //time delay, so larger numbers are slower. originally 800
+const int accRateMin = stepInterval; //matches the final movement speed of the carousel
+const int accRateSteps = 4; //steps at each time delay. originally 20
+const int accRateDelta = 1; //change in time delay. originally 5
 const int decRateMax = 800;
-const int decRateMin = 100;
-const int decRateStep = 20;
-const int decRateDelta = 5;
+const int decRateMin = stepInterval;
+const int decRateSteps = 4;
+const int decRateDelta = 1;
 
-const int accTotalSteps = (int)(1.0*(accRateMax-accRateMin)/accRateDelta)*accRateSteps;
-const int decTotalSteps = (int)(1.0*(decRateMax-decRateMin)/decRateDelta)*decRateSteps;
+const int accTotalSteps = (int)((1.0*(accRateMax-accRateMin))/accRateDelta)*accRateSteps;
+const int decTotalSteps = (int)((1.0*(decRateMax-decRateMin))/decRateDelta)*decRateSteps;
 const int accDecSteps = accTotalSteps+decTotalSteps;
 
 
@@ -53,6 +53,13 @@ void setup() {
   Serial.begin(9600);
   while (!Serial) {
     //Wait until serial is up and running;
+  }
+  if(accDecSteps > 3*numSteps/10){
+    Serial.println("WARNING: accel() and/or deccel() takes too long, adjust parameters.");
+    Serial.print("It takes ");
+    Serial.print((accDecSteps - 3*numSteps/10));
+    Serial.println(" steps too many.");
+    Serial.println("Decrease ___RateSteps, increase ___RateDelta, or decrease ___RateMax");//(___RateMin should not be changed so it matches the constant speed)
   }
 }
 
@@ -79,7 +86,6 @@ void loop() {
   int num = getDir();
   
   moveCage(num);
-  currentPos = desiredPos;
   Serial.print("Current Position:");
   Serial.println(currentPos);
 
@@ -112,9 +118,11 @@ int getDir() {
   
   if(desiredPos == 26){ // [
     digitalWrite(dirPin, HIGH);
+    desiredPos = currentPos;
     return 10;
   }else if(desiredPos == 28){ // ]
     digitalWrite(dirPin, LOW);
+    desiredPos = currentPos;
     return 10;
   }else if(desiredPos == -5){ // <
     digitalWrite(dirPin, HIGH);
@@ -122,6 +130,13 @@ int getDir() {
   }else if(desiredPos == -3){ // >
     digitalWrite(dirPin, LOW);
     return -99;
+  }
+
+  // Unless it's a special case handled above, the carousel should only move for inputs A -- J
+  // Otherwise, nothing should happen
+  if((desiredPos<0) || (desiredPos>9)){
+    Serial.println("Desired Position is not valid");
+    return 0;
   }
   
   // Need to:
@@ -165,6 +180,7 @@ void moveCage(int numCages) {
       delayMicroseconds(stepInterval);
     }
     deccel();
+    currentPos = desiredPos;
     
   }else if(numCages == -99){
     //nudge left or right depending on current stepPin value
@@ -241,6 +257,3 @@ void dispEncoder(boolean outZ) {
 //  // resets all non-position variables to the original values
 //  // need to check for name collisions before calling this "reset"
 //}
-
-
-
