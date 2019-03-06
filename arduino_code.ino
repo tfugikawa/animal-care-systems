@@ -112,11 +112,20 @@ int getDir() {
 
   //run if input was '[' or ']' for one full IJABC or one full CBAJI rotation
   // '<' for nudge ABC and '>' for nudge CBA (subject to change)
+  // '-' for one cage ABC and '+' for one cage CBA
   //this should only be kept for testing purposes
   //whether the direction pins should be high or low requires testing
   //it is assumed that the enable pin is correct
   
-  if(desiredPos == 26){ // [
+  if(desiredPos == -20){ // -
+    digitalWrite(dirPin, HIGH);
+    desiredPos = (currentPos-1)%10;
+    return 1;
+  }else if(desiredPos == -22){ // +
+    digitalWrite(dirPin, LOW);
+    desiredPos = (currentPos+1)%10;
+    return 1;
+  }else if(desiredPos == 26){ // [
     digitalWrite(dirPin, HIGH);
     desiredPos = currentPos;
     return 10;
