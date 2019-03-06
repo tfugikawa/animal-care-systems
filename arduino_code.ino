@@ -1,6 +1,6 @@
 // Global Vars
 unsigned long numSteps = 20000; // Microstepping
-unsigned int stepInterval = 100; // Used for delayMicroseconds, controls max speed (30 degrees per second)
+unsigned int stepInterval = 175; // Used for delayMicroseconds, controls max speed (30 degrees per second)
 unsigned int varRate = 800;//62500;//Acceleration function used for rampup and rampdown (125000/2) This is a 125 ms frequency starting pulse (only moves 10 steps)
 //const int accelRate = 2000; // Number of milliseconds for acceleration, used also for decceleration
 boolean eStop = false; // Logic for determining whether or not to stop
@@ -24,6 +24,21 @@ const int outputZ = 6;
 const int emergencyPin = 10;
 
 
+// Movement variables (to be changed by testing)
+const int accRateMax = 850; //time delay, so larger numbers are slower. originally 800
+const int accRateMin = stepInterval; //matches the final movement speed of the carousel
+const int accRateSteps = 7; //steps at each time delay. originally 20
+const int accRateDelta = 1; //change in time delay. originally 5
+const int decRateMax = 500;
+const int decRateMin = stepInterval;
+const int decRateSteps = 3;
+const int decRateDelta = accRateDelta;
+
+const int accTotalSteps = (int)((1.0*(accRateMax-accRateMin))/accRateDelta)*accRateSteps;
+const int decTotalSteps = (int)((1.0*(decRateMax-decRateMin))/decRateDelta)*decRateSteps;
+const int accDecSteps = accTotalSteps+decTotalSteps;
+
+
 void setup() {
   // Configure Control Pins
   pinMode(stepPin, OUTPUT);
@@ -38,6 +53,13 @@ void setup() {
   Serial.begin(9600);
   while (!Serial) {
     //Wait until serial is up and running;
+  }
+  if(accDecSteps > 3*numSteps/10){
+    Serial.println("WARNING: accel() and/or deccel() takes too long, adjust parameters.");
+    Serial.print("It takes ");
+    Serial.print((accDecSteps - 3*numSteps/10));
+    Serial.println(" steps too many.");
+    Serial.println("Decrease ___RateSteps, increase ___RateDelta, or decrease ___RateMax");//(___RateMin should not be changed so it matches the constant speed)
   }
 }
 
@@ -64,7 +86,6 @@ void loop() {
   int num = getDir();
   
   moveCage(num);
-  currentPos = desiredPos;
   Serial.print("Current Position:");
   Serial.println(currentPos);
 
@@ -97,9 +118,11 @@ int getDir() {
   
   if(desiredPos == 26){ // [
     digitalWrite(dirPin, HIGH);
+    desiredPos = currentPos;
     return 10;
   }else if(desiredPos == 28){ // ]
     digitalWrite(dirPin, LOW);
+    desiredPos = currentPos;
     return 10;
   }else if(desiredPos == -5){ // <
     digitalWrite(dirPin, HIGH);
@@ -107,6 +130,13 @@ int getDir() {
   }else if(desiredPos == -3){ // >
     digitalWrite(dirPin, LOW);
     return -99;
+  }
+
+  // Unless it's a special case handled above, the carousel should only move for inputs A -- J
+  // Otherwise, nothing should happen
+  if((desiredPos<0) || (desiredPos>9)){
+    Serial.println("Desired Position is not valid");
+    return 0;
   }
   
   // Need to:
@@ -139,22 +169,25 @@ int getDir() {
 void moveCage(int numCages) {
   //Code for moving the equivalent of one cage
   if (numCages > 0) {
-    
     //digitalWrite(enPin, LOW);
     
     accel();
-    unsigned long var = 3 * numSteps * numCages / 10 - 5600; //=numSteps*numCages*3 - 40...3* gear ratio - 40 steps form acceleration and deceleration
-    for (unsigned long j = 0; j < var; j++) { //40 steps form acceleration and deceleration
+    unsigned long var = 3 * numSteps * numCages / 10 - accDecSteps; //=numSteps*numCages*3 - 40...3* gear ratio - 40 steps from acceleration and deceleration
+    for (unsigned long j = 0; j < var; j++) { //40 steps from acceleration and deceleration
       digitalWrite(stepPin, HIGH);
       delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
       delayMicroseconds(stepInterval);
     }
     deccel();
-    
+    currentPos = desiredPos;
     
   }else if(numCages == -99){
     //nudge left or right depending on current stepPin value
+    
+    //replace this with custom movement? put that in new function (e.g. "nudge()")?
+    //or add custom accel(int) and deccel(int)?
+    
     accel();
     deccel();
   }
@@ -163,26 +196,28 @@ void moveCage(int numCages) {
 }
 
 void accel() {
-  while (varRate > 100) {
-    for (int i = 0; i < 20; i++) {
+  varRate = accRateMax;
+  while (varRate > accRateMin) {
+    for (int i = 0; i < accRateSteps; i++) {
       digitalWrite(stepPin, HIGH);
       delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
       delayMicroseconds(varRate);
     }
-    varRate -= 5;
+    varRate -= accRateDelta;
   }
 }
 
 void deccel() {
-  while (varRate < 800) {
-    for (int i = 0; i < 20; i++) {
+  varRate = decRateMin;
+  while (varRate < decRateMax) {
+    for (int i = 0; i < decRateSteps; i++) {
       digitalWrite(stepPin, HIGH);
       delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
       delayMicroseconds(varRate);
     }
-    varRate += 5; // delay by 33326/2 microSeconds less each time (maximum to meet acceleration standards);
+    varRate += decRateDelta; // delay by 33326/2 microSeconds less each time (maximum to meet acceleration standards);
   }
 }
 
@@ -222,6 +257,3 @@ void dispEncoder(boolean outZ) {
 //  // resets all non-position variables to the original values
 //  // need to check for name collisions before calling this "reset"
 //}
-
-
-
