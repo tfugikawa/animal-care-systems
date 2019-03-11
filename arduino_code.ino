@@ -48,6 +48,7 @@ void setup() {
   // Configure Encoder Pins
   pinMode (outputA, INPUT_PULLUP);
   pinMode (outputB, INPUT_PULLUP);
+  pinMode (outputZ, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(outputA), updateEncoder, CHANGE);
   // Setup Communication
   Serial.begin(9600);
@@ -90,7 +91,7 @@ void loop() {
   Serial.println(currentPos);
 
   //dispEncoder(true);
-  //dispEncoder(false);
+  dispEncoder(false);
   
 }
 
@@ -112,11 +113,20 @@ int getDir() {
 
   //run if input was '[' or ']' for one full IJABC or one full CBAJI rotation
   // '<' for nudge ABC and '>' for nudge CBA (subject to change)
+  // '+' for one cage ABC and '-' for one cage CBA
   //this should only be kept for testing purposes
   //whether the direction pins should be high or low requires testing
   //it is assumed that the enable pin is correct
   
-  if(desiredPos == 26){ // [
+  if(desiredPos == -22){ // +
+    digitalWrite(dirPin, HIGH);
+    desiredPos = (currentPos+1 + 20)%10;
+    //return 1;
+  }else if(desiredPos == -20){ // -
+    digitalWrite(dirPin, LOW);
+    desiredPos = (currentPos-1 + 20)%10;
+    //return 1;
+  }else if(desiredPos == 26){ // [
     digitalWrite(dirPin, HIGH);
     desiredPos = currentPos;
     return 10;
@@ -227,17 +237,25 @@ void updateEncoder() {
     encoderPrev = encoderPos;
     //If B is high when A changes to low, CW, which is negative
     encoderPos -= 2*digitalRead(outputB)-1;
-    encoderPos = encoderPos%200;
+    //encoderPos = (encoderPos+402)%201;
+
+    
+    //Serial.print(encoderPos);
+    //Serial.print(" ");
+    
+    
+    if (digitalRead(outputZ) == 0) {
+      //Serial.println();
+      //Serial.println("Z 0");
+      encoderPos = 0;
+    }
+    
   }
-  /*
-  if (digitalRead(outputZ) == 1) { //unsure if Z is high or low when it is active, requires testing
-    encoderPos = 0;
-  }
-  */
 }
 
 void dispEncoder(boolean outZ) {
   //Displays encoder information to the serial. This only needs to be used while testing.
+  Serial.println();
   if(outZ) {
     Serial.print("outputZ: ");
     Serial.println(digitalRead(outputZ));
