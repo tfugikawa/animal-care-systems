@@ -232,25 +232,64 @@ void deccel() {
 }
 
 void updateEncoder() {
-  //using interrupt mode "CHANGE" with a check for low A has a better accuracy than using mode FALLING for YUMO rotary encoder E6A2-CW3C
-  if(digitalRead(outputA) == 0){
-    encoderPrev = encoderPos;
-    //If B is high when A changes to low, CW, which is negative
-    encoderPos -= 2*digitalRead(outputB)-1;
-    //encoderPos = (encoderPos+402)%201;
+  encoderPrev = encoderPos;
+  boolean A = (digitalRead(outputA)==1);
+  boolean B = (digitalRead(outputB)==1);
+  boolean Z = (digitalRead(outputZ)==1);
 
+  //If A matches B, positive (clockwise) rotation
+  if(A==B){
+    encoderPos++;
+  }else{
+    encoderPos--;
+  }
+  encoderPos = (encoderPos+400)%400;
+
+  //If Z is low and A is high, reached the 0 position
+  if(A && !Z){
+    Serial.println("\n\nZ0");
+    if(encoderPos!=0){
+      Serial.println("Resetting to 0");
+      encoderPos = 0;
+    }else
+      Serial.println("No reset required");
+  }
+
+  /*
+  if(digitalRead(outputA) == 0){
+    //If B is high when A changes to low, CW, which is positive
+    encoderPos -= 2*digitalRead(outputB)-1;
+    encoderPos = (encoderPos+800)%400;
     
-    //Serial.print(encoderPos);
-    //Serial.print(" ");
-    
+  }else{ // outputA == 1
+    encoderPos += 2*digitalRead(outputB)-1;
+    encoderPos = (encoderPos+400)%400;
     
     if (digitalRead(outputZ) == 0) {
-      //Serial.println();
-      //Serial.println("Z 0");
+      Serial.println();
+      Serial.print("Channel A: ");
+      Serial.print(digitalRead(outputA));
+      Serial.print(" ");
+      Serial.println("Z0");
+      if(encoderPos!=0)
+        Serial.println("Resetting to 0");
       encoderPos = 0;
     }
-    
   }
+  */
+  
+  if(encoderPos%10==0)
+    Serial.println();
+  if(encoderPos>=0)
+    Serial.print(" ");
+  if(abs(encoderPos)<100)
+    Serial.print(" ");
+  if(abs(encoderPos)<10)
+    Serial.print(" ");
+  Serial.print(encoderPos);
+  Serial.print("_A");
+  Serial.print(digitalRead(outputA));
+  Serial.print(" ");
 }
 
 void dispEncoder(boolean outZ) {
