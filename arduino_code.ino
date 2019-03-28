@@ -145,26 +145,26 @@ int getDir() {
   //whether the direction pins should be high or low requires testing
   //it is assumed that the enable pin is correct
   
-  if(desiredPos == -22){ // +
+  if(desiredPos == -22){ // +, one right
     digitalWrite(dirPin, HIGH);
     desiredPos = (currentPos+1 + 20)%10;
     //return 1;
-  }else if(desiredPos == -20){ // -
+  }else if(desiredPos == -20){ // -, one left
     digitalWrite(dirPin, LOW);
     desiredPos = (currentPos-1 + 20)%10;
     //return 1;
-  }else if(desiredPos == 26){ // [
+  }else if(desiredPos == 26){ // [, full rotation CW
     digitalWrite(dirPin, HIGH);
     desiredPos = currentPos;
     return 10;
-  }else if(desiredPos == 28){ // ]
+  }else if(desiredPos == 28){ // ], full rotation CCW
     digitalWrite(dirPin, LOW);
     desiredPos = currentPos;
     return 10;
-  }else if(desiredPos == -5){ // <
+  }else if(desiredPos == -5){ // <, nudge left
     digitalWrite(dirPin, HIGH);
     return -99;
-  }else if(desiredPos == -3){ // >
+  }else if(desiredPos == -3){ // >, nudge right
     digitalWrite(dirPin, LOW);
     return -99;
   }
@@ -212,35 +212,85 @@ void moveCage(int numCages) {
   if (numCages > 0) {
 
     int overshoot_correction = 1500;
+    int steps = 3 * numSteps * numCages /10 - overshoot_correction
     
-    accel();
-    unsigned long var = 3 * numSteps * numCages / 10 - accDecSteps - overshoot_correction; //=numSteps*numCages*3 - 40...3* gear ratio - 40 steps from acceleration and deceleration
-    for (unsigned long j = 0; j < var; j++) { //40 steps from acceleration and deceleration
-      digitalWrite(stepPin, HIGH);
-      delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
-      digitalWrite(stepPin, LOW);
-      delayMicroseconds(stepInterval);
-    }
-    deccel();
-
+    moveArb(steps);
+   
     //correct for over/undershoot
     while (encoderPos!=desEncoderPos) { //40 steps from acceleration and deceleration
       digitalWrite(stepPin, HIGH);
-      delayMicroseconds(decRateMax);// Used for delayMicroseconds, controls max speed
+      delayMicroseconds(decRateMax); // Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
       delayMicroseconds(decRateMax);
     }
     
     currentPos = desiredPos;
     
-  }else if(numCages == -99){
-    //nudge left or right depending on current stepPin value
-    
-    //replace this with custom movement? put that in new function (e.g. "nudge()")?
-    //or add custom accel(int) and deccel(int)?
-    
+  }else if(numCages == -99){ //nudge left or right depending on current stepPin value
+    float frac = 0.1; //ordered to move 0.1 cages
+    int steps = floor(3 * numSteps/10 * frac); //convert cage fraction to steps
+    moveArb(steps);
+  }
+  
+}
+
+void moveArb(int steps) {
+  //As of this version, calculations assume that accRateDelta == decRateDelta == 1
+  //Future versions will need reworking to account for this
+  
+  if(steps >= accDecSteps){ //"Normal" operation
     accel();
+    for (unsigned long j = 0; j < (steps-accDecSteps); j++) {
+      digitalWrite(stepPin, HIGH);
+      delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
+      digitalWrite(stepPin, LOW);
+      delayMicroseconds(stepInterval);
+    }
     deccel();
+  }else if(steps < accRateSteps*(accRateMax-decRateMax)){ //Special case for very short movement
+    //Movement is too short to reach decMaxRate at any point, so decceleration never happens
+    //Current implementation is to ignore this and just accelerate to the end
+    //The highest velocity reached is still slower than that at the end of deccel()
+    varRate = accRateMax;
+    int sCount = 0;
+    while (sCount < steps) {
+      for (int i = 0; i < accRateSteps; i++) {
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(varRate);
+        sCount++;
+        if(sCount==steps){
+          break;
+        }
+      }
+      varRate -= accRateDelta;
+    }
+  }else{ //movement less than accel() + deccel(), but without the problems above
+    
+    //ceil(value) so that the end position is never passed
+    int desRate = ceil((1.0*(accRateSteps*accRateMax + decRateSteps*decRateMax - steps)) / (accRateSteps + decRateSteps));
+    
+    varRate = accRateMax;
+    while (varRate > desRate) {
+      for (int i = 0; i < accRateSteps; i++) {
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(varRate);
+      }
+      varRate -= accRateDelta;
+    }
+    
+    while (varRate < decRateMax) {
+      for (int i = 0; i < decRateSteps; i++) {
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(varRate);
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(varRate);
+      }
+      varRate += decRateDelta;
+    }
   }
   
 }
