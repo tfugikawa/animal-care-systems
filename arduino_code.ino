@@ -271,6 +271,13 @@ void deccel() {
   }
 }
 
+boolean inRange(int cur, int des, int t){
+  //cur is current encoder position
+  //des is desired encoder position
+  //t is how far off cur can be from des (modulo 400)
+  return (abs((cur-des+t+400)%400-t)<=t);
+}
+
 void updateEncoder() {
   encoderPrev = encoderPos;
   boolean A = (digitalRead(outputA)==1);
