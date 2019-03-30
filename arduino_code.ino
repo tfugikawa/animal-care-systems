@@ -70,8 +70,9 @@ void setup() {
     //Wait until data is recieved from web page
     int temp = recvData();
   }
+  digitalWrite(enPin, HIGH);
   encoderZero = encoderPos;
-  
+  digitalWrite(enPin, LOW);
 }
 
 void loop() {
@@ -116,7 +117,7 @@ void loop() {
   Serial.print("Current Position:");
   Serial.println(currentPos);
 
-  
+  digitalWrite(enPin, HIGH);
   //dispEncoder(true);
   dispEncoder(false);
   
