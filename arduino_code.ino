@@ -66,27 +66,16 @@ void setup() {
     Serial.println("Decrease ___RateSteps, increase ___RateDelta, or decrease ___RateMax");//(___RateMin should not be changed so it matches the constant speed)
   }
 
-
-  digitalWrite(enPin, HIGH);
-  while(newData == false){
-    desiredPos = recvData();
-  }
-  digitalWrite(enPin, LOW);
-  dispEncoder(false);
   encoderZero = encoderPos;
   
 }
 
 void loop() {
-  delay(1000);
-  digitalWrite(enPin, HIGH);
   
-  // check for input data
   while (newData == false) {
     //Wait until data is recieved from web page
     desiredPos = recvData();
   }
-
   digitalWrite(enPin, LOW);
   
   //this block is run if the input was 'R' for "Resetting" position data
@@ -97,10 +86,10 @@ void loop() {
     currentPos = 0;
     Serial.println("Positions reset");
   }
-  // X is for calibrate?
 
-  currentPos = floor(((encoderPos-encoderZero+400)%400)/40);
-  desiredPos = 0;
+  
+  //currentPos = floor(((encoderPos-encoderZero+400)%400)/40);
+  //desiredPos = 0;
   
   Serial.print("Recieved: ");
   Serial.println(desiredPos);
@@ -108,9 +97,11 @@ void loop() {
   // perform operations based on desired Position, use getDir()
   int num = getDir();
 
+  /*
   desEncoderPos = (encoderPos + direc*num*40+400)%400;
   Serial.print("\nDesired Encoder Pos");
   Serial.println(desEncoderPos);
+  */
   
   moveCage(num);
   Serial.print("Current Position:");
@@ -118,7 +109,7 @@ void loop() {
 
   
   //dispEncoder(true);
-  dispEncoder(false);
+  //dispEncoder(false);
   
 }
 
@@ -210,12 +201,14 @@ int getDir() {
 void moveCage(int numCages) {
   //Code for moving the equivalent of one cage
   if (numCages > 0) {
-
-    int overshoot_correction = 1500;
-    int steps = 3 * numSteps * numCages /10 - overshoot_correction
+    
+    
+    //int overshoot_correction = 1500;
+    int steps = 3 * numSteps * numCages /10; // - overshoot_correction;
     
     moveArb(steps);
    
+    /*
     //correct for over/undershoot
     while (encoderPos!=desEncoderPos) { //40 steps from acceleration and deceleration
       digitalWrite(stepPin, HIGH);
@@ -223,7 +216,7 @@ void moveCage(int numCages) {
       digitalWrite(stepPin, LOW);
       delayMicroseconds(decRateMax);
     }
-    
+    */
     currentPos = desiredPos;
     
   }else if(numCages == -99){ //nudge left or right depending on current stepPin value
