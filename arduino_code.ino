@@ -66,6 +66,10 @@ void setup() {
     Serial.println("Decrease ___RateSteps, increase ___RateDelta, or decrease ___RateMax");//(___RateMin should not be changed so it matches the constant speed)
   }
 
+  while (newData == false) {
+    //Wait until data is recieved from web page
+    int temp = recvData();
+  }
   encoderZero = encoderPos;
   
 }
@@ -81,16 +85,19 @@ void loop() {
   //this block is run if the input was 'R' for "Resetting" position data
   //this should only be kept for testing purposes, as the encoder should not be manually reset
   if(desiredPos == 17){ // R
-    encoderPos = 0;
+    encoderZero = encoderPos;
     desiredPos = 0;
     currentPos = 0;
     Serial.println("Positions reset");
   }
 
   
-  //currentPos = floor(((encoderPos-encoderZero+400)%400)/40);
+  currentPos = floor(((encoderPos-encoderZero+400)%400)/40.0);
   //desiredPos = 0;
   
+  Serial.print("Current: ");
+  Serial.print(currentPos);
+  Serial.print("  ");
   Serial.print("Recieved: ");
   Serial.println(desiredPos);
   newData = false; // reset serial perform operation based upon input
@@ -104,12 +111,14 @@ void loop() {
   */
   
   moveCage(num);
+  
+  currentPos = floor(((encoderPos-encoderZero+400)%400)/40.0);
   Serial.print("Current Position:");
   Serial.println(currentPos);
 
   
   //dispEncoder(true);
-  //dispEncoder(false);
+  dispEncoder(false);
   
 }
 
