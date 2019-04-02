@@ -66,7 +66,7 @@ void setup() {
     Serial.println("Decrease ___RateSteps, increase ___RateDelta, or decrease ___RateMax");//(___RateMin should not be changed so it matches the constant speed)
   }
 
-  Serial.println("Move carousel to A");
+  Serial.println("Move carousel until the encoder resets its zero, then move to A");
   digitalWrite(enPin, HIGH);
   while (newData == false) {
     //Wait until data is recieved from web page
@@ -107,8 +107,16 @@ void loop() {
     desiredPos = 0;
     currentPos = 0;
     Serial.println("Recalibrated to A");
+
+    /*
+    //Calibrates as the last known position. This can only move the calibration spot 10 cages/rev*(20 (pulses at a time) / 400 (pulses/rev))=0.5 cages at a time
+    desiredPos = currentPos;
+    encoderZero = (encoderPos - 40*currentPos+800)%400
+    Serial.println("Recalibrated");
+    */
+    
   }else{
-    //+20 is for edge cases
+    //+20 is to change the zone from position + [0,40] to position + [-20,20]
     currentPos = floor(((encoderPos-encoderZero+20+400)%400)/40.0);
     
     
@@ -121,11 +129,11 @@ void loop() {
     // perform operations based on desired position, use getDir()
     int num = getDir();
 
-    Serial.print("Interpreted: ");
+    Serial.print("Interpreted as: ");
     Serial.println(desiredPos);
   
-    if(num>=0 && num<=9){ //moving to a cage position or one full revolution
-      //desEncoderPos = (encoderPos + direc*num*40+400)%400;
+    if(num>=0 && num<=9){ //moving to a cage position
+      //full cage rotations are already taken care of
       desEncoderPos = (desiredPos*40 + encoderZero)%400;
       Serial.print("Desired Encoder Pos");
       Serial.println(desEncoderPos);
@@ -134,7 +142,7 @@ void loop() {
     moveCage(num);
   
     Serial.println("\n\nStopped moving the motor\n");
-    //+20 is to changes the zone from the original position + [0,40] to original position + [-20,20]
+    //+20 is to change the zone from position + [0,40] to position + [-20,20]
     currentPos = floor(((encoderPos-encoderZero+20+400)%400)/40.0);
     Serial.print("\nCurrent Position (after moving):");
     Serial.println(currentPos);
@@ -434,13 +442,11 @@ void updateEncoder() {
     if(encoderPos!=0){
       //Serial.println("Resetting to 0");
       
-      
       encoderPos = 0;
     }else{
       //Serial.println("No reset required");
     }
   }
-
   
   if(encoderPos%10==0)
     Serial.println();
