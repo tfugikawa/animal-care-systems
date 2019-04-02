@@ -10,6 +10,9 @@ int currentPos = 0;
 
 int encoderPos = 0; //position of encoder
 int encoderPrev; //previous position of encoder
+int encoderZero = 0; // zeroed position of the encoder
+int desEncoderPos = encoderPos;
+int direc = 1;
 
 
 // Define Control Pins, all are arbitrary for right now
@@ -29,7 +32,7 @@ const int accRateMax = 850; //time delay, so larger numbers are slower. original
 const int accRateMin = stepInterval; //matches the final movement speed of the carousel
 const int accRateSteps = 7; //steps at each time delay. originally 20
 const int accRateDelta = 1; //change in time delay. originally 5
-const int decRateMax = 500;
+const int decRateMax = 300;
 const int decRateMin = stepInterval;
 const int decRateSteps = 3;
 const int decRateDelta = accRateDelta;
@@ -62,37 +65,84 @@ void setup() {
     Serial.println(" steps too many.");
     Serial.println("Decrease ___RateSteps, increase ___RateDelta, or decrease ___RateMax");//(___RateMin should not be changed so it matches the constant speed)
   }
+
+  Serial.println("Move carousel to A");
+  digitalWrite(enPin, HIGH);
+  while (newData == false) {
+    //Wait until data is recieved from web page
+    int temp = recvData();
+  }
+  delay(500);
+  Serial.flush();
+  newData = false;
+
+  digitalWrite(enPin, LOW);
+  //DELETE THIS LATER
+  //encoderPos = 0;
+  //DELETE ABOVE LATER
+  
+  encoderZero = encoderPos;
+  
+  Serial.print("\nMoved to A\nZero is at ");
+  Serial.println(encoderZero);
 }
 
 void loop() {
-  // check for input data
+
+  delay(2000);
+  digitalWrite(enPin, HIGH);
+  Serial.println("\nWaiting for new data");
   while (newData == false) {
     //Wait until data is recieved from web page
     desiredPos = recvData();
   }
+
+  newData = false;
+  digitalWrite(enPin, LOW);
   
-  //this block is run if the input was 'R' for "Resetting" position data
-  //this should only be kept for testing purposes, as the encoder should not be manually reset
-  if(desiredPos == 17){ // R
-    encoderPos = 0;
+  
+  if(desiredPos == -23){
+    //this block is run if the input was '*' for calibration
+    encoderZero = encoderPos;
     desiredPos = 0;
     currentPos = 0;
-    Serial.println("Positions reset");
+    Serial.println("Recalibrated to A");
+  }else{
+    //+20 is for edge cases
+    currentPos = floor(((encoderPos-encoderZero+20+400)%400)/40.0);
+    
+    
+    Serial.print("\nCurrent: ");
+    Serial.print(currentPos);
+    Serial.print("  ");
+    Serial.print("Recieved: ");
+    Serial.println(desiredPos);
+    newData = false; // reset serial perform operation based upon input
+    // perform operations based on desired position, use getDir()
+    int num = getDir();
+
+    Serial.print("Interpreted: ");
+    Serial.println(desiredPos);
+  
+    if(num>=0 && num<=9){ //moving to a cage position or one full revolution
+      //desEncoderPos = (encoderPos + direc*num*40+400)%400;
+      desEncoderPos = (desiredPos*40 + encoderZero)%400;
+      Serial.print("Desired Encoder Pos");
+      Serial.println(desEncoderPos);
+    }
+    
+    moveCage(num);
+  
+    Serial.println("\n\nStopped moving the motor\n");
+    //+20 is to changes the zone from the original position + [0,40] to original position + [-20,20]
+    currentPos = floor(((encoderPos-encoderZero+20+400)%400)/40.0);
+    Serial.print("\nCurrent Position (after moving):");
+    Serial.println(currentPos);
+    desEncoderPos = encoderPos;
   }
   
-  Serial.print("Recieved: ");
-  Serial.println(desiredPos);
-  newData = false; // reset serial perform operation based upon input
-  // perform operations based on desired Position, use getDir()
-  int num = getDir();
-  
-  moveCage(num);
-  Serial.print("Current Position:");
-  Serial.println(currentPos);
-
   //dispEncoder(true);
-  dispEncoder(false);
-  
+  //dispEncoder(false);
 }
 
 //------------------------------------------------------------------------------------
@@ -118,27 +168,39 @@ int getDir() {
   //whether the direction pins should be high or low requires testing
   //it is assumed that the enable pin is correct
   
-  if(desiredPos == -22){ // +
+  if(desiredPos == -22){ // +, one right
     digitalWrite(dirPin, HIGH);
+    direc = 1;
     desiredPos = (currentPos+1 + 20)%10;
-    //return 1;
-  }else if(desiredPos == -20){ // -
+    return 1;
+  }else if(desiredPos == -20){ // -, one left
     digitalWrite(dirPin, LOW);
+    direc = -1;
     desiredPos = (currentPos-1 + 20)%10;
-    //return 1;
-  }else if(desiredPos == 26){ // [
+    return 1;
+  }else if(desiredPos == 26){ // [, full rotation CW
     digitalWrite(dirPin, HIGH);
+    direc = 1;
     desiredPos = currentPos;
-    return 10;
-  }else if(desiredPos == 28){ // ]
+    desEncoderPos = encoderPos;
+    Serial.print("\nDesired Encoder Pos");
+    Serial.println(desEncoderPos);
+    return -1;
+  }else if(desiredPos == 28){ // ], full rotation CCW
     digitalWrite(dirPin, LOW);
+    direc = -1;
     desiredPos = currentPos;
-    return 10;
-  }else if(desiredPos == -5){ // <
+    desEncoderPos = encoderPos;
+    Serial.print("\nDesired Encoder Pos");
+    Serial.println(desEncoderPos);
+    return -1;
+  }else if(desiredPos == -5){ // <, nudge left
     digitalWrite(dirPin, HIGH);
+    direc = 1;
     return -99;
-  }else if(desiredPos == -3){ // >
+  }else if(desiredPos == -3){ // >, nudge right
     digitalWrite(dirPin, LOW);
+    direc = -1;
     return -99;
   }
 
@@ -146,7 +208,7 @@ int getDir() {
   // Otherwise, nothing should happen
   if((desiredPos<0) || (desiredPos>9)){
     Serial.println("Desired Position is not valid");
-    return 0;
+    return -2;
   }
   
   // Need to:
@@ -160,49 +222,163 @@ int getDir() {
   int diff = desiredPos - currentPos;
   if (diff > 5) {
     digitalWrite(dirPin, LOW);
+    direc = -1;
     return 10 - diff;
   }
   else if (diff <= -5) {
     digitalWrite(dirPin, HIGH);
+    direc = 1;
     return diff + 10;
   }
   else if (diff < 0 && diff > -5) {
     digitalWrite(dirPin, LOW);
+    direc = -1;
     return 0 - diff;
   }
   else {
     digitalWrite(dirPin, HIGH);
+    direc = 1;
     return diff;
   }
 }
 
 void moveCage(int numCages) {
-  //Code for moving the equivalent of one cage
-  if (numCages > 0) {
-    //digitalWrite(enPin, LOW);
+  
+  if (numCages >= 0) {
     
+    int encDistance = min(abs(encoderPos-desEncoderPos),400-abs(encoderPos-desEncoderPos)); //values 0-200
+
+    if(encDistance <= 20){ //direction not set in getDir() since it so short, need to set it here
+      if(inRange((desEncoderPos-10+400)%400,encoderPos,10)){
+        digitalWrite(dirPin, HIGH);
+        direc = 1;
+      }else{
+        digitalWrite(dirPin, LOW);
+        direc = -1;
+      }
+    }
+    
+    int overshoot_correction = floor(0.3*3*numSteps/10); //chosen to stop 0.3 cages before expected
+    long steps = encDistance * 3 * numSteps/400; //map 0-200 to 0-30000
+
+    if(steps<=overshoot_correction){
+      Serial.println("\nToo short for overshoot");
+      Serial.println(steps);
+      moveArb(steps);
+    }else{
+      boolean short = moveArb(steps-overshoot_correction);
+      
+      //correct for over/undershoot
+      //inRange(current,desired,threshold range)
+      Serial.println("\nUndershoot correction");
+      if(!short){
+        while(!inRange(encoderPos,desEncoderPos,2)) { //while not within 2 encoder steps of desired
+          digitalWrite(stepPin, HIGH);
+          delayMicroseconds(decRateMax); // Used for delayMicroseconds, controls max speed
+          digitalWrite(stepPin, LOW);
+          delayMicroseconds(decRateMax);
+        }
+      }else{
+        Serial.println("Very short movement");
+        while(!inRange(encoderPos,desEncoderPos,1)) { //while not within 1 encoder step of desired
+          digitalWrite(stepPin, HIGH);
+          delayMicroseconds(varRate); // Used for delayMicroseconds, controls max speed
+          digitalWrite(stepPin, LOW);
+          delayMicroseconds(varRate);
+        }
+      }
+    }
+    
+  }else if(numCages == -1){ //full revolution
+    int overshoot_correction = floor(0.3*3*numSteps/10); //chosen to stop 0.3 cages before expected
+    long steps = 3 * numSteps;
+    
+    moveArb(steps-overshoot_correction);
+      
+    //correct for over/undershoot
+    Serial.println("\nUndershoot correction");
+    while(!inRange(encoderPos,desEncoderPos,1)) { //while not within 2 encoder steps of desired
+      digitalWrite(stepPin, HIGH);
+      delayMicroseconds(decRateMax); // Used for delayMicroseconds, controls max speed
+      digitalWrite(stepPin, LOW);
+      delayMicroseconds(decRateMax);
+    }
+      
+  }else if(numCages == -99){ //nudge left or right depending on current stepPin value
+    float frac = 0.1; //ordered to move 0.1 cages
+    int steps = floor(3 * numSteps/10 * frac); //convert cage fraction to steps
+    moveArb(steps);
+  }
+  
+}
+
+boolean moveArb(long steps) {
+  //returns true if very short movement occured
+  boolean shortMove = false;
+  //As of this version, calculations assume that accRateDelta == decRateDelta == 1
+  //Future versions will need reworking to account for this
+
+  
+  if(steps >= accDecSteps){ //"Normal" operation
+    Serial.println("\naccel");
     accel();
-    unsigned long var = 3 * numSteps * numCages / 10 - accDecSteps; //=numSteps*numCages*3 - 40...3* gear ratio - 40 steps from acceleration and deceleration
-    for (unsigned long j = 0; j < var; j++) { //40 steps from acceleration and deceleration
+    Serial.println("\nmovement");
+    for (unsigned long j = 0; j < (steps-accDecSteps); j++) {
       digitalWrite(stepPin, HIGH);
       delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
       delayMicroseconds(stepInterval);
     }
+    Serial.println("\nLong movement");
+    Serial.println("deccel");
     deccel();
-    currentPos = desiredPos;
+  }else if(steps < accRateSteps*(accRateMax-decRateMax)){ //Special case for very short movement
+    //Movement is too short to reach decMaxRate at any point, so decceleration never happens
+    //Current implementation is to ignore this and just accelerate to the end
+    //The highest velocity reached is still slower than that at the end of deccel()
+    shortMove = true;
+    varRate = accRateMax;
+    long sCount = 0;
+    while (sCount < steps) {
+      for (int i = 0; i < accRateSteps; i++) {
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(varRate);
+        sCount++;
+        if(sCount==steps){
+          break;
+        }
+      }
+      varRate -= accRateDelta;
+    }
+  }else{ //movement less than accel() + deccel(), but without the problems above
     
-  }else if(numCages == -99){
-    //nudge left or right depending on current stepPin value
+    //ceil(value) so that the end position is never passed
+    int desRate = ceil((1.0*(accRateSteps*accRateMax + decRateSteps*decRateMax - steps)) / (accRateSteps + decRateSteps));
     
-    //replace this with custom movement? put that in new function (e.g. "nudge()")?
-    //or add custom accel(int) and deccel(int)?
+    varRate = accRateMax;
+    while (varRate > desRate) {
+      for (int i = 0; i < accRateSteps; i++) {
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(varRate);
+      }
+      varRate -= accRateDelta;
+    }
     
-    accel();
-    deccel();
+    while (varRate < decRateMax) {
+      for (int i = 0; i < decRateSteps; i++) {
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(varRate);
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(varRate);
+      }
+      varRate += decRateDelta;
+    }
   }
-  //delayMicroseconds( <<TBD experimentally? Might be unnecessary based on the behavior of deccel()>> );
-  //digitalWrite(enPin, HIGH);
+  return shortMove;
 }
 
 void accel() {
@@ -231,26 +407,54 @@ void deccel() {
   }
 }
 
-void updateEncoder() {
-  //using interrupt mode "CHANGE" with a check for low A has a better accuracy than using mode FALLING for YUMO rotary encoder E6A2-CW3C
-  if(digitalRead(outputA) == 0){
-    encoderPrev = encoderPos;
-    //If B is high when A changes to low, CW, which is negative
-    encoderPos -= 2*digitalRead(outputB)-1;
-    //encoderPos = (encoderPos+402)%201;
+boolean inRange(int cur, int des, int t){
+  //cur is current encoder position
+  //des is desired encoder position
+  //t is how far off cur can be from des (modulo 400)
+  return (abs((cur-des+t+400)%400-t)<=t);
+}
 
-    
-    //Serial.print(encoderPos);
-    //Serial.print(" ");
-    
-    
-    if (digitalRead(outputZ) == 0) {
-      //Serial.println();
-      //Serial.println("Z 0");
-      encoderPos = 0;
-    }
-    
+void updateEncoder() {
+  encoderPrev = encoderPos;
+  boolean A = (digitalRead(outputA)==1);
+  boolean B = (digitalRead(outputB)==1);
+  boolean Z = (digitalRead(outputZ)==1);
+
+  //If A matches B, positive (clockwise) rotation
+  if(A==B){
+    encoderPos++;
+  }else{
+    encoderPos--;
   }
+  encoderPos = (encoderPos+400)%400;
+
+  //If Z is low and A is high, reached the 0 position
+  if(A && !Z){
+    //Serial.println("\n\nZ0");
+    if(encoderPos!=0){
+      //Serial.println("Resetting to 0");
+      
+      
+      encoderPos = 0;
+    }else{
+      //Serial.println("No reset required");
+    }
+  }
+
+  
+  if(encoderPos%10==0)
+    Serial.println();
+  if(encoderPos>=0)
+    Serial.print(" ");
+  if(abs(encoderPos)<100)
+    Serial.print(" ");
+  if(abs(encoderPos)<10)
+    Serial.print(" ");
+  Serial.print(encoderPos);
+  Serial.print("_A");
+  Serial.print(digitalRead(outputA));
+  Serial.print(" ");
+  
 }
 
 void dispEncoder(boolean outZ) {
