@@ -1,19 +1,21 @@
 // Global Vars
 unsigned long numSteps = 20000; // Microstepping
 unsigned int stepInterval = 175; // Used for delayMicroseconds, controls max speed (30 degrees per second)
-unsigned int varRate = 800;//62500;//Acceleration function used for rampup and rampdown (125000/2) This is a 125 ms frequency starting pulse (only moves 10 steps)
-//const int accelRate = 2000; // Number of milliseconds for acceleration, used also for decceleration
+unsigned int varRate = 800;//62500;// Acceleration function used for rampup and rampdown (125000/2) This is a 125 ms frequency starting pulse (only moves 10 steps)
+
 boolean eStop = false; // Logic for determining whether or not to stop
-boolean newData = false;
-int desiredPos;
+boolean newData = false; // Logic for whether or not there is data to be processed in the serial
+int desiredPos = 0;
 int currentPos = 0;
 
 int encoderPos = 0; //position of encoder
 int encoderPrev; //previous position of encoder
-int encoderZero = 0; // zeroed position of the encoder
+int encoderZero = 0; //zeroed position of the encoder
 int desEncoderPos = encoderPos;
 int direc = 1;
 
+boolean altView = false;
+int offset = 0;
 
 // Define Control Pins, all are arbitrary for right now
 const int stepPin = 5;
@@ -106,7 +108,7 @@ void loop() {
     encoderZero = encoderPos;
     desiredPos = 0;
     currentPos = 0;
-    Serial.println("Recalibrated to A");
+    Serial.println("\nRecalibrated to A");
 
     /*
     //Calibrates as the last known position. This can only move the calibration spot 10 cages/rev*(20 (pulses at a time) / 400 (pulses/rev))=0.5 cages at a time
@@ -210,6 +212,56 @@ int getDir() {
     digitalWrite(dirPin, LOW);
     direc = -1;
     return -99;
+  }else if(desiredPos == 14){ // O, go to original position
+    Serial.println("Recieved O");
+
+    desiredPos = currentPos;
+    
+    if(altView){
+      altView = false;
+      encoderZero = (encoderZero-offset+400)%400;
+      Serial.print("Encoder zero: ");
+      Serial.println(encoderZero);
+      /*
+      desEncoderPos = (encoderZero + 40*desiredPos)%400;
+      Serial.print("\nDesired Encoder Pos");
+      Serial.println(desEncoderPos);
+      */
+      return 0;
+    }else{
+      /*
+      desEncoderPos = (encoderZero + 40*desiredPos)%400;
+      Serial.print("\nDesired Encoder Pos");
+      Serial.println(desEncoderPos);
+      */
+      return 0;
+    }
+  }else if(desiredPos == 18){ // S, alternate view
+    Serial.println("Recieved S");
+
+    desiredPos = currentPos;
+    
+    if(altView || offset==0){
+      encoderZero = (encoderZero-offset+400)%400;
+      //offset = (encoderPos-encoderZero+400)%400;              // with this approach, can only set view with respect to A, though it works as expected going O-S-O-S-O...
+      offset = (encoderPos-encoderZero-40*currentPos+400)%400;//with this approach, can only change the view by +/- 20 at a time
+      encoderZero = (encoderZero+offset+400)%400;
+      desEncoderPos = (encoderZero + 40*desiredPos)%400;
+      Serial.print("\nDesired Encoder Pos");
+      Serial.println(desEncoderPos);
+      Serial.print("Offset: ");
+      Serial.println(offset);
+      return -3;
+    }else{
+      altView = true;
+      encoderZero = (encoderZero+offset+400)%400;
+      /*
+      desEncoderPos = (encoderZero + 40*desiredPos)%400;
+      */
+      Serial.print("Encoder zero: ");
+      Serial.println(encoderZero);
+      return 0; //???
+    }
   }
 
   // Unless it's a special case handled above, the carousel should only move for inputs A -- J
@@ -256,8 +308,10 @@ void moveCage(int numCages) {
     
     int encDistance = min(abs(encoderPos-desEncoderPos),400-abs(encoderPos-desEncoderPos)); //values 0-200
 
-    if(encDistance <= 20){ //direction not set in getDir() since it so short, need to set it here
-      if(inRange((desEncoderPos-10+400)%400,encoderPos,10)){
+    //int tempT = 20;
+    int tempT = 200;
+    if(encDistance <= tempT){ //direction not set in getDir() since it so short, need to set it here
+      if(inRange((desEncoderPos-tempT/2+400)%400,encoderPos,tempT/2)){
         digitalWrite(dirPin, HIGH);
         direc = 1;
       }else{
@@ -266,7 +320,7 @@ void moveCage(int numCages) {
       }
     }
     
-    int overshoot_correction = floor(0.3*3*numSteps/10); //chosen to stop 0.3 cages before expected
+    int overshoot_correction = floor(0.3*3*numSteps/10); //chosen to stop 0.3 cages before desired
     long steps = encDistance * 3 * numSteps/400; //map 0-200 to 0-30000
 
     if(steps<=overshoot_correction){
@@ -274,12 +328,12 @@ void moveCage(int numCages) {
       Serial.println(steps);
       moveArb(steps);
     }else{
-      boolean short = moveArb(steps-overshoot_correction);
+      boolean shortMove = moveArb(steps-overshoot_correction);
       
       //correct for over/undershoot
       //inRange(current,desired,threshold range)
       Serial.println("\nUndershoot correction");
-      if(!short){
+      if(!shortMove){
         while(!inRange(encoderPos,desEncoderPos,2)) { //while not within 2 encoder steps of desired
           digitalWrite(stepPin, HIGH);
           delayMicroseconds(decRateMax); // Used for delayMicroseconds, controls max speed
@@ -298,7 +352,7 @@ void moveCage(int numCages) {
     }
     
   }else if(numCages == -1){ //full revolution
-    int overshoot_correction = floor(0.3*3*numSteps/10); //chosen to stop 0.3 cages before expected
+    int overshoot_correction = floor(0.3*3*numSteps/10); //chosen to stop 0.3 cages before desired
     long steps = 3 * numSteps;
     
     moveArb(steps-overshoot_correction);
