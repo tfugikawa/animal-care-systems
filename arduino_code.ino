@@ -1,19 +1,23 @@
 // Global Vars
-unsigned long numSteps = 20000; // Microstepping
+unsigned long numSteps = 20000; // Microstepping, steps per revolution of the motor
 unsigned int stepInterval = 175; // Used for delayMicroseconds, controls max speed (30 degrees per second)
 unsigned int varRate = 800;//62500;// Acceleration function used for rampup and rampdown (125000/2) This is a 125 ms frequency starting pulse (only moves 10 steps)
 
-boolean eStop = false; // Logic for determining whether or not to stop
+boolean eStop = false; // Logic for emergency stoppage
 boolean newData = false; // Logic for whether or not there is data to be processed in the serial
-int desiredPos = 0;
+int desiredPos = 0; //Desired cage position after moving (or other desired value for relative motion commands)
 
-int encoderPos = 0; //position of encoder
-int encoderPrev; //previous position of encoder
+int encoderPos = 0; //current position of encoder
+int encoderPrev = 0; //previous position of encoder
 int encoderZero = 0; //zeroed position of the encoder
-int desEncoderPos = encoderPos;
-int direc = 1;
+int desEncoderPos = encoderPos; //desired position of encoder after moving
 
-// Define Control Pins, all are arbitrary for right now
+int mainZero = 0; //zeroed position of main view
+int altZero = 0; //zeroed position of alternate view
+int prevPos = 0; //previously issued command
+bool altView = false; //false if main view, true if alternate view
+
+// Define Control Pins
 const int stepPin = 5;
 const int dirPin = 4;
 const int enPin = 8;
@@ -29,10 +33,10 @@ const int relayPin = 10;
 
 
 // Movement variables (to be changed by testing)
-const int accRateMax = 850; //time delay, so larger numbers are slower. originally 800
+const int accRateMax = 850; //time delay, so larger numbers are slower movement
 const int accRateMin = stepInterval; //matches the final movement speed of the carousel
-const int accRateSteps = 7; //steps at each time delay. originally 20
-const int accRateDelta = 1; //change in time delay. originally 5
+const int accRateSteps = 7; //steps at each time delay
+const int accRateDelta = 1; //change in time delay
 const int decRateMax = 300;
 const int decRateMin = stepInterval;
 const int decRateSteps = 3;
@@ -67,8 +71,9 @@ void setup() {
     //Wait until serial is up and running;
   }
 
+
   
-  //Replace this with an automatic option?
+  //REPLACE THIS WITH AN AUTOMATIC VERSION?
   
   Serial.println("Move carousel until the encoder resets its zero, then move to A");
   digitalWrite(enPin, HIGH);
@@ -79,10 +84,11 @@ void setup() {
   delay(500);
   Serial.flush();
   newData = false;
-
-  digitalWrite(enPin, LOW);
-  
+  digitalWrite(enPin, LOW);  
   encoderZero = encoderPos;
+  mainZero = encoderZero; //first view is main view
+  altZero = (encoderZero+20+400)%400; //default alternate view is half cage rotation
+
   
   Serial.print("\nMoved to A\nZero is at ");
   Serial.println(encoderZero);
@@ -101,11 +107,26 @@ void loop() {
   digitalWrite(enPin, LOW); //prepare to move
 
 
-  //NEEDS SIGNIFICANT EDITING TO MATCH DESIRED CONTROL SCHEME
   if(desiredPos == -23){ //this block is run if the input was '*' for calibration
-    encoderZero = encoderPos;
-    desiredPos = 0;
-    Serial.println("\nRecalibrated to A");
+
+    if(altView){ // previously issued command was an alternate view
+      altZero = (encoderPos-prevPos*40+400)%400;
+      Serial.print("\nSet ");
+      Serial.print((char)(prevPos+65));
+      Serial.print(" in alternate view to: ");
+      Serial.print(encoderPos);
+      Serial.print(" and set alternate view 0 to: ");
+      Serial.println(altZero);
+    }else{ // previously issued command was a main view
+      mainZero = (encoderPos-prevPos*40+400)%400;
+      Serial.print("\nSet ");
+      Serial.print((char)(prevPos+65));
+      Serial.print(" in main view to: ");
+      Serial.print(encoderPos);
+      Serial.print(" and set main view 0 to: ");
+      Serial.println(mainZero);
+    }
+
   }else{
     Serial.print("\nRecieved: ");
     Serial.println(desiredPos);
@@ -119,6 +140,7 @@ void loop() {
     if(num>=0 && num<=9){ //moving to a cage position
       //full cage rotations and prev/next encoder positions are already taken care of
       //nudges don't care about encoder position
+      prevPos = desiredPos;
       desEncoderPos = (desiredPos*40 + encoderZero)%400;
       Serial.print("Desired Encoder Pos");
       Serial.println(desEncoderPos);
@@ -204,25 +226,27 @@ int getDir() {
   }else if(desiredPos == -3){ // >, nudge right
     digitalWrite(dirPin, LOW);
     return -99;
-  }else if(desiredPos == 14){ // O, go to original position                   //OUTDATED: NEEDS TO BE DELETED AND NEW STRUCTURE FOR ALTERNATE VIEW IMPLEMENTED
-    Serial.println("Recieved O");
-    return 0;
-  }else if(desiredPos == 18){ // S, alternate view                            //OUTDATED: NEEDS TO BE DELETED AND NEW STRUCTURE FOR ALTERNATE VIEW IMPLEMENTED
-    Serial.println("Recieved S");
-    return 0;
   }
 
-  //CHANGE TO WORK FOR A -- J and a -- j
 
-  // Unless it's a special case handled above, the carousel should only move for inputs A -- J
+  // Unless it's a special case handled above, the carousel should only move for inputs A -- J and a -- j
+  if((desiredPos>=0)&&(desiredPos<=9)){
+    encoderZero = mainZero;
+    altView = false;
+    
+    return desiredPos;
+  }else if((desiredPos>=32)&&(desiredPos<=41)){
+    encoderZero = altZero;
+    altView = true;
+    
+    desiredPos = desiredPos - 32;
+    return desiredPos;
+  }
+
+
   // Otherwise, nothing should happen
-  if((desiredPos<0) || (desiredPos>9)){
-    Serial.println("Desired Position is not valid");
-    return -2;
-  }
-  
-  //direction is handled in moveCage
-  return desiredPos;
+  Serial.println("Desired Position is not valid");
+  return -2;
 }
 
 
@@ -237,14 +261,12 @@ void moveCage(int numCages) {
     if(encDistance <= tempT){ //direction not set in getDir() since it so short, need to set it here
       if(inRange((desEncoderPos-tempT/2+400)%400,encoderPos,tempT/2)){
         digitalWrite(dirPin, HIGH);
-        direc = 1;
       }else{
         digitalWrite(dirPin, LOW);
-        direc = -1;
       }
     }
     
-    int overshoot_correction = floor(0.3*3*numSteps/10); //chosen to stop 0.3 cages before desired
+    int overshoot_correction = floor(0.2*3*numSteps/10); //chosen to stop 0.2 cages before desired
     long steps = encDistance * 3 * numSteps/400; //map 0-200 to 0-30000
 
     if(steps<=overshoot_correction){
@@ -258,7 +280,7 @@ void moveCage(int numCages) {
       //inRange(current,desired,threshold range)
       Serial.println("\nUndershoot correction");
       if(!shortMove){
-        while(!inRange(encoderPos,desEncoderPos,1)) { //while not within 2 encoder steps of desired
+        while(!inRange(encoderPos,desEncoderPos,0)) { //while not within _ encoder steps of desired
           digitalWrite(stepPin, HIGH);
           delayMicroseconds(decRateMax); // Used for delayMicroseconds, controls max speed
           digitalWrite(stepPin, LOW);
@@ -266,7 +288,7 @@ void moveCage(int numCages) {
         }
       }else{
         Serial.println("Very short movement");
-        while(!inRange(encoderPos,desEncoderPos,1)) { //while not within 1 encoder step of desired
+        while(!inRange(encoderPos,desEncoderPos,0)) { //while not within _ encoder steps of desired
           digitalWrite(stepPin, HIGH);
           delayMicroseconds(varRate); // Used for delayMicroseconds, controls max speed
           digitalWrite(stepPin, LOW);
@@ -276,14 +298,14 @@ void moveCage(int numCages) {
     }
     
   }else if(numCages == -77){ //full revolution
-    int overshoot_correction = floor(0.3*3*numSteps/10); //chosen to stop 0.3 cages before desired
+    int overshoot_correction = floor(0.2*3*numSteps/10); //chosen to stop 0.2 cages before desired
     long steps = 3 * numSteps;
     
     moveArb(steps-overshoot_correction);
       
     //correct for over/undershoot
     Serial.println("\nUndershoot correction");
-    while(!inRange(encoderPos,desEncoderPos,1)) { //while not within 2 encoder steps of desired
+    while(!inRange(encoderPos,desEncoderPos,1)) { //while not within _ encoder steps of desired
       digitalWrite(stepPin, HIGH);
       delayMicroseconds(decRateMax); // Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
@@ -389,7 +411,7 @@ void deccel() {
       digitalWrite(stepPin, LOW);
       delayMicroseconds(varRate);
     }
-    varRate += decRateDelta; // delay by 33326/2 microSeconds less each time (maximum to meet acceleration standards);
+    varRate += decRateDelta;
   }
 }
 
@@ -397,6 +419,7 @@ boolean inRange(int cur, int des, int t){
   //cur is current encoder position
   //des is desired encoder position
   //t is how far off cur can be from des (modulo 400)
+  //can be modified to different control scheme by changing both 400s
   return (abs((cur-des+t+400)%400-t)<=t);
 }
 
