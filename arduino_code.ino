@@ -97,7 +97,7 @@ void setup() {
 
 void loop() {
 
-  delay(2000);
+  delay(1000);
   digitalWrite(enPin, HIGH);
   Serial.println("\nWaiting for new data");
   while (newData == false) {
@@ -266,7 +266,7 @@ void moveCage(int numCages) {
         digitalWrite(dirPin, LOW);
       }
     }
-
+    int direc = 2*digitalRead(dirPin)-1; // 1 if high, -1 if low
     
     int overshoot_correction = floor(0.2*3*numSteps/10); //chosen to stop 0.2 cages before desired
     long steps = encDistance * 3 * numSteps/400; //map 0-200 to 0-30000
@@ -282,12 +282,31 @@ void moveCage(int numCages) {
       //inRange(current,desired,threshold range)
       if(!eStop){
         Serial.println("\nUndershoot correction");
+        int theoEnc = encoderPos;
+        long sCount = 0;
+        
         if(!shortMove){
           while(!inRange(encoderPos,desEncoderPos,0)) { //while not within _ encoder steps of desired
             digitalWrite(stepPin, HIGH);
             delayMicroseconds(decRateMax); // Used for delayMicroseconds, controls max speed
             digitalWrite(stepPin, LOW);
             delayMicroseconds(decRateMax);
+            sCount++;
+
+            if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
+              theoEnc = (theoEnc+direc*5+400)%400;
+              if(!inRange(encoderPos,theoEnc,3)){
+                eStop = true;    
+              }
+            }
+            
+            if(eStop){
+              break;
+            }
+          }
+          if(eStop){
+            Serial.print("\nERROR. source: moveCage (undershoot correction), should have reached ");
+            Serial.println(theoEnc);
           }
         }else{
           Serial.println("Very short movement");
@@ -296,20 +315,36 @@ void moveCage(int numCages) {
             delayMicroseconds(varRate); // Used for delayMicroseconds, controls max speed
             digitalWrite(stepPin, LOW);
             delayMicroseconds(varRate);
+            sCount++;
+            
+            if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
+              theoEnc = (theoEnc+direc*5+400)%400;
+              if(!inRange(encoderPos,theoEnc,3)){
+                eStop = true;    
+              }
+            }
+            if(eStop){
+              break;
+            }
+          }
+          if(eStop){
+            Serial.print("\nERROR. source: moveCage (short undershoot correction), should have reached ");
+            Serial.println(theoEnc);
           }
         }
-      }else{
-        Serial.println("An error occurred, recalibrate system");
-        eStop = false;
       }
     }
       
   }else if(numCages == -77){ //full revolution
+    int direc = 2*digitalRead(dirPin)-1; // 1 if high, -1 if low
     int overshoot_correction = floor(0.2*3*numSteps/10); //chosen to stop 0.2 cages before desired
     long steps = 3 * numSteps;
     
     moveArb(steps-overshoot_correction);
-      
+
+    int theoEnc = encoderPos;
+    long sCount = 0;
+    
     //correct for over/undershoot
     Serial.println("\nUndershoot correction");
     while(!inRange(encoderPos,desEncoderPos,1)) { //while not within _ encoder steps of desired
@@ -317,14 +352,27 @@ void moveCage(int numCages) {
       delayMicroseconds(decRateMax); // Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
       delayMicroseconds(decRateMax);
+      sCount++;
+            
+      if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
+        theoEnc = (theoEnc+direc*5+400)%400;
+        if(!inRange(encoderPos,theoEnc,3)){
+          eStop = true;    
+        }
+      }
+      if(eStop){
+        break;
+      }
     }
-      
+    if(eStop){
+      Serial.print("\nERROR. source: moveCage (full revolution undershoot correction), should have reached ");
+      Serial.print(theoEnc);
+    }
   }else if(numCages == -99){ //nudge left or right depending on current stepPin value
     float frac = 0.07; //ordered to move 0.07 cages
     int steps = floor(3 * numSteps/10 * frac); //convert cage fraction to steps
     moveArb(steps);
   }
-
 
   if(eStop){
     emergencyStop();
@@ -532,11 +580,11 @@ void accel() {
       
       if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
         theoEnc = (theoEnc+direc*5+400)%400;
+        Serial.println("\nChecking...");
         if(!inRange(encoderPos,theoEnc,3)){
           eStop = true;
-          Serial.print("\nERROR: ");
+          Serial.println("\nERROR");
         }
-        Serial.println(theoEnc);
       }
       if(eStop){
         break;
@@ -547,8 +595,10 @@ void accel() {
       break;
     }
   }
-  Serial.print("\nERROR. source: accel, should have reached ");
-  Serial.println(theoEnc);
+  if(eStop){
+    Serial.print("\nERROR. source: accel, should have reached ");
+    Serial.println(theoEnc);
+  }
 }
 
 void deccel() {
@@ -573,8 +623,9 @@ void deccel() {
       break;
     }
   }
-
-  Serial.print("\nERROR. source: deccel");
+  if(eStop){
+    Serial.print("\nERROR. source: deccel");
+  }
 }
 
 boolean inRange(int cur, int des, int t){
@@ -627,8 +678,20 @@ void updateEncoder() {
 }
 
 void emergencyStop(){
-  Serial.println("\nERROR: Move the carousel to a safe position, reset, and recalibrate");
+  Serial.println("\nERROR: Make the carousel safe to operate, reset, then recalibrate");
   digitalWrite(enPin,HIGH);
+
+  int val = digitalRead(buttonPin);
+  int temp = 0;
+  while(val==1){
+    if(temp%20==0){
+      Serial.println("Button is still pushed");
+    }
+    temp++;
+    delay(500);
+    val = digitalRead(buttonPin);
+  }
+  
   while(eStop){
     int temp = 0;
     while(newData==false){
@@ -638,6 +701,7 @@ void emergencyStop(){
 
     if(temp == 17){ // R
       Serial.println("\nSuccessful reset: please recalibrate the system");
+      eStop = false;
       break;
     }else{
       Serial.println("\nInvalid input, please reset the system");
