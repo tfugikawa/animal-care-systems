@@ -1,3 +1,5 @@
+//Written in Arduino 1.8.8
+
 // Global Vars
 unsigned long numSteps = 20000; // Microstepping, steps per revolution of the motor
 unsigned int stepInterval = 175; // Used for delayMicroseconds, controls max speed (30 degrees per second)
@@ -52,7 +54,7 @@ void setup() {
   pinMode(stepPin, OUTPUT);
   pinMode(dirPin, OUTPUT);
   pinMode(enPin, OUTPUT);
-  digitalWrite(enPin, LOW); //LOW means the motor is engaged
+  digitalWrite(enPin, HIGH); //HIGH means the motor is disengaged
   
   // Configure Encoder Pins
   pinMode(outputA, INPUT_PULLUP);
@@ -72,27 +74,9 @@ void setup() {
     //Wait until serial is up and running;
   }
 
+  startupRoutine(); // moves carousel until it reaches the encoder zero
 
   
-  //REPLACE THIS WITH AN AUTOMATIC VERSION?
-  
-  Serial.println("Move carousel until the encoder resets its zero, then move to A");
-  digitalWrite(enPin, HIGH);
-  while (newData == false) {
-    //Wait until data is recieved from web page
-    int temp = recvData();
-  }
-  delay(500);
-  Serial.flush();
-  newData = false;
-  digitalWrite(enPin, LOW);  
-  encoderZero = encoderPos;
-  mainZero = encoderZero; //first view is main view
-  altZero = (encoderZero+20+400)%400; //default alternate view is half cage rotation
-
-  
-  Serial.print("\nMoved to A\nZero is at ");
-  Serial.println(encoderZero);
 }
 
 void loop() {
@@ -707,8 +691,89 @@ void emergencyStop(){
       Serial.println("\nInvalid input, please reset the system");
     }
   }
+
+  prevPos = 0;
 }
 
+void startupRoutine(){
+  
+  newData = false;
+  digitalWrite(enPin,HIGH);
+  int temp = 0;
+  while(temp != -23){ //wait until '*' is recieved
+    Serial.println("Press calibrate to begin");
+    while (newData == false) {
+      temp = recvData();
+    }
+  }
+  newData = false;
+
+  
+  bool fin = false;
+  digitalWrite(dirPin,HIGH);
+  digitalWrite(enPin,LOW);
+  
+  varRate = accRateMax;
+  while (varRate > accRateMin) {
+    for (int i = 0; i < accRateSteps; i++) {
+      digitalWrite(stepPin, HIGH);
+      delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
+      digitalWrite(stepPin, LOW);
+      delayMicroseconds(varRate);
+      if(digitalRead(outputZ)==0){
+        fin = true;
+      }
+    }
+    varRate -= accRateDelta;
+    if(fin){
+      digitalWrite(enPin,HIGH);
+    }
+  }
+
+  while (!fin) {
+    digitalWrite(stepPin, HIGH);
+    delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
+    digitalWrite(stepPin, LOW);
+    delayMicroseconds(stepInterval);
+    
+    if(digitalRead(outputZ)==0){
+      fin = true;
+    }
+  }
+
+  
+  varRate = decRateMin;
+  while (varRate < decRateMax && (digitalRead(enPin)==0) ) {
+    for (int i = 0; i < decRateSteps; i++) {
+      digitalWrite(stepPin, HIGH);
+      delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
+      digitalWrite(stepPin, LOW);
+      delayMicroseconds(varRate);
+    }
+    varRate += decRateDelta;
+  }
+  
+  digitalWrite(enPin,HIGH);
+
+  newData = false;
+  temp = 0;
+  while(temp != -23){ //wait until '*' is recieved
+    Serial.println("\nPress calibrate when facing A (main view)");
+    while (newData == false) {
+      temp = recvData();
+    }
+  }
+  newData = false;
+  
+  digitalWrite(enPin, LOW);  
+  encoderZero = encoderPos;
+  mainZero = encoderZero; //first view is main view
+  altZero = (encoderZero+20+400)%400; //default alternate view is half cage rotation
+  Serial.print("\nCurrently at A (main view)\nZero is at ");
+  Serial.println(encoderZero);
+  varRate = 800;
+  delay(100);
+}
 
 void buttonPush(){
   eStop = true;
