@@ -705,8 +705,9 @@ void startupRoutine(){
     while (newData == false) {
       temp = recvData();
     }
+    newData = false;
   }
-  newData = false;
+  
 
   
   bool fin = false;
@@ -762,8 +763,9 @@ void startupRoutine(){
     while (newData == false) {
       temp = recvData();
     }
+    newData = false;
   }
-  newData = false;
+  
   
   digitalWrite(enPin, LOW);  
   encoderZero = encoderPos;
