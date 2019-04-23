@@ -64,7 +64,7 @@ void setup() {
 
   // Configure Emergency Stop Pins
   pinMode(buttonPin, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(buttonPin), buttonPush, RISING);
+  attachInterrupt(digitalPinToInterrupt(buttonPin), buttonPush, FALLING);
   pinMode(relayPin, OUTPUT);
   digitalWrite(relayPin, LOW);
   
@@ -80,14 +80,20 @@ void setup() {
 }
 
 void loop() {
-
   delay(1000);
   digitalWrite(enPin, HIGH);
   Serial.println("\nWaiting for new data");
+  eStop = false;
   while (newData == false) {
     //Wait until data is recieved from web page
     desiredPos = recvData();
+    if(eStop){
+      Serial.println("\nERROR. Source: loop while getting data");
+      desiredPos = 0;
+      newData = true;
+    }
   }
+  
   newData = false; // reset serial perform operation based upon input
   digitalWrite(enPin, LOW); //prepare to move
 
@@ -289,7 +295,7 @@ void moveCage(int numCages) {
             }
           }
           if(eStop){
-            Serial.print("\nERROR. source: moveCage (undershoot correction), should have reached ");
+            Serial.print("\nERROR. Source: moveCage (undershoot correction), should have reached ");
             Serial.println(theoEnc);
           }
         }else{
@@ -312,7 +318,7 @@ void moveCage(int numCages) {
             }
           }
           if(eStop){
-            Serial.print("\nERROR. source: moveCage (short undershoot correction), should have reached ");
+            Serial.print("\nERROR. Source: moveCage (short undershoot correction), should have reached ");
             Serial.println(theoEnc);
           }
         }
@@ -349,7 +355,7 @@ void moveCage(int numCages) {
       }
     }
     if(eStop){
-      Serial.print("\nERROR. source: moveCage (full revolution undershoot correction), should have reached ");
+      Serial.print("\nERROR. Source: moveCage (full revolution undershoot correction), should have reached ");
       Serial.print(theoEnc);
     }
   }else if(numCages == -99){ //nudge left or right depending on current stepPin value
@@ -366,7 +372,7 @@ void moveCage(int numCages) {
 
 boolean moveArb(long steps) {
   if(eStop){
-    Serial.println("\nERROR. source: moveArb, previous error");
+    Serial.println("\nERROR. Source: moveArb, previous error");
     return false;
   }
   
@@ -384,7 +390,7 @@ boolean moveArb(long steps) {
     accel();
     Serial.println("\nmovement");
     if(eStop){
-      Serial.println("\nERROR. source: moveArb, error in accel()");
+      Serial.println("\nERROR. Source: moveArb, error in accel()");
       return shortMove;
     }
     
@@ -417,7 +423,7 @@ boolean moveArb(long steps) {
       Serial.println("deccel");
       deccel();
     }else{
-      Serial.print("\nERROR. source: moveArb, should have reached ");
+      Serial.print("\nERROR. Source: moveArb, should have reached ");
       Serial.println(theoEnc);
     }
     
@@ -461,7 +467,7 @@ boolean moveArb(long steps) {
     }
 
     if(eStop){
-      Serial.print("\nERROR. source: moveArb, should have reached ");
+      Serial.print("\nERROR. Source: moveArb, should have reached ");
       Serial.println(theoEnc);
     }
   
@@ -534,7 +540,7 @@ boolean moveArb(long steps) {
     }
     
     if(eStop){
-      Serial.print("\nERROR. source: moveArb, should have reached ");
+      Serial.print("\nERROR. Source: moveArb, should have reached ");
       Serial.println(theoEnc);
     }
     
@@ -545,7 +551,7 @@ boolean moveArb(long steps) {
 
 void accel() {
   if(eStop){
-    Serial.println("\nERROR. source: accel, previous error ");
+    Serial.println("\nERROR. Source: accel, previous error ");
     return;
   }
   
@@ -580,14 +586,14 @@ void accel() {
     }
   }
   if(eStop){
-    Serial.print("\nERROR. source: accel, should have reached ");
+    Serial.print("\nERROR. Source: accel, should have reached ");
     Serial.println(theoEnc);
   }
 }
 
 void deccel() {
   if(eStop){
-    Serial.println("\nERROR. source: deccel, previous error ");
+    Serial.println("\nERROR. Source: deccel, previous error ");
     return;
   }
   
@@ -608,7 +614,7 @@ void deccel() {
     }
   }
   if(eStop){
-    Serial.print("\nERROR. source: deccel");
+    Serial.print("\nERROR. Source: deccel");
   }
 }
 
@@ -662,12 +668,13 @@ void updateEncoder() {
 }
 
 void emergencyStop(){
-  Serial.println("\nERROR: Make the carousel safe to operate, reset, then recalibrate");
+  Serial.println("\nERROR. Make the carousel safe to operate, reset, then recalibrate");
+  digitalWrite(relayPin,HIGH);
   digitalWrite(enPin,HIGH);
 
   int val = digitalRead(buttonPin);
-  int temp = 0;
-  while(val==1){
+  int temp = 1;
+  while(val==0){
     if(temp%20==0){
       Serial.println("Button is still pushed");
     }
@@ -685,13 +692,14 @@ void emergencyStop(){
 
     if(temp == 17){ // R
       Serial.println("\nSuccessful reset: please recalibrate the system");
+      digitalWrite(relayPin,LOW);
       eStop = false;
       break;
     }else{
       Serial.println("\nInvalid input, please reset the system");
     }
   }
-
+  eStop = false;
   prevPos = 0;
 }
 
