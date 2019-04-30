@@ -74,7 +74,6 @@ void setup() {
     //Wait until serial is up and running;
   }
 
-  eStop = false;
   startupRoutine(); // moves carousel until it reaches the encoder zero
 
   
@@ -286,7 +285,7 @@ void moveCage(int numCages) {
 
             if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
               theoEnc = (theoEnc+direc*5+400)%400;
-              if(!inRange(encoderPos,theoEnc,3)){
+              if(!inRange(encoderPos,theoEnc,5)){
                 eStop = true;    
               }
             }
@@ -310,7 +309,7 @@ void moveCage(int numCages) {
             
             if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
               theoEnc = (theoEnc+direc*5+400)%400;
-              if(!inRange(encoderPos,theoEnc,3)){
+              if(!inRange(encoderPos,theoEnc,5)){
                 eStop = true;    
               }
             }
@@ -347,7 +346,7 @@ void moveCage(int numCages) {
             
       if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
         theoEnc = (theoEnc+direc*5+400)%400;
-        if(!inRange(encoderPos,theoEnc,3)){
+        if(!inRange(encoderPos,theoEnc,5)){
           eStop = true;    
         }
       }
@@ -396,10 +395,8 @@ boolean moveArb(long steps) {
     }
     
     int theoEnc = encoderPos;
-    /*
     Serial.print("\nStarts at: ");
     Serial.println(theoEnc);
-    */
     
     for (unsigned long j = 0; j < (steps-accDecSteps); j++) {
       digitalWrite(stepPin, HIGH);
@@ -411,7 +408,7 @@ boolean moveArb(long steps) {
       //Error checking
       if(j%(numSteps*3/80)==0 && j!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
         theoEnc = (theoEnc+direc*5+400)%400;
-        if(!inRange(encoderPos,theoEnc,3)){
+        if(!inRange(encoderPos,theoEnc,5)){
           eStop = true;    
         }
       }
@@ -456,7 +453,7 @@ boolean moveArb(long steps) {
 
         if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
           theoEnc = (theoEnc+direc*5+400)%400;
-          if(!inRange(encoderPos,theoEnc,3)){
+          if(!inRange(encoderPos,theoEnc,5)){
             eStop = true;
           }
         }
@@ -497,7 +494,7 @@ boolean moveArb(long steps) {
         
         if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
           theoEnc = (theoEnc+direc*5+400)%400;
-          if(!inRange(encoderPos,theoEnc,3)){
+          if(!inRange(encoderPos,theoEnc,5)){
             eStop = true;
             Serial.print("\nERROR: ");
             Serial.println(theoEnc);
@@ -529,7 +526,7 @@ boolean moveArb(long steps) {
         
         if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
           theoEnc = (theoEnc+direc*5+400)%400;
-          if(!inRange(encoderPos,theoEnc,3)){
+          if(!inRange(encoderPos,theoEnc,5)){
             eStop = true;
           }
         }
@@ -573,11 +570,13 @@ void accel() {
       
       if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
         theoEnc = (theoEnc+direc*5+400)%400;
-        if(!inRange(encoderPos,theoEnc,3)){
+        Serial.println("\nChecking...");
+        if(!inRange(encoderPos,theoEnc,5)){
           eStop = true;
           Serial.println("\nERROR");
         }
       }
+
       if(eStop){
         break;
       }
@@ -655,7 +654,7 @@ void updateEncoder() {
   }
 
 
-  /*
+  
   if(encoderPos%10==0)
     Serial.println();
   if(encoderPos>=0)
@@ -668,7 +667,7 @@ void updateEncoder() {
   Serial.print("_A");
   Serial.print(digitalRead(outputA));
   Serial.print(" ");
-  */
+  
 }
 
 void emergencyStop(){
@@ -708,9 +707,6 @@ void emergencyStop(){
 }
 
 void startupRoutine(){
-  if(eStop){
-    Serial.println("Previous error");
-  }
   while(true){  
     eStop = false;
     newData = false;
@@ -723,16 +719,13 @@ void startupRoutine(){
       }
       newData = false;
     }
-    eStop = false;
     
+    delay(10);
     
     bool fin = false;
     digitalWrite(dirPin,HIGH);
     digitalWrite(enPin,LOW);
-
-    Serial.println("Before accel");
-    //Serial.println(eStop);
-
+    
     varRate = accRateMax;
     while (varRate > accRateMin) {
       for (int i = 0; i < accRateSteps; i++) {
@@ -755,9 +748,6 @@ void startupRoutine(){
         break;
       }
     }
-
-    Serial.println("After accel");
-    //Serial.println(eStop);
   
     while (!fin) {
       digitalWrite(stepPin, HIGH);
@@ -772,9 +762,7 @@ void startupRoutine(){
         break;
       }
     }
-
-    Serial.println("After move");
-    //Serial.println(eStop);
+  
     
     varRate = decRateMin;
     while (varRate < decRateMax && (digitalRead(enPin)==0) ) {
@@ -794,10 +782,7 @@ void startupRoutine(){
       varRate += decRateDelta;
     }
     digitalWrite(enPin,HIGH);
-
-    Serial.println("After deccel");
-    //Serial.println(eStop);
-    
+  
     if(!eStop){
       newData = false;
       temp = 0;
@@ -819,13 +804,25 @@ void startupRoutine(){
       delay(100);
       return;
     }else{
-      Serial.println("error in initial calibration");
       emergencyStop();
       eStop = false;
     }
   }
 }
 
+int errorCheck(long sCount, int theoEnc, int direc){
+  int theoEncNew = theoEnc;
+  if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
+    theoEncNew = (theoEnc+direc*5+400)%400;
+    if(!inRange(encoderPos,theoEncNew,3)){
+      eStop = true;
+      Serial.println("\nERROR");
+    }
+  }
+
+  return theoEncNew;
+}
+
 void buttonPush(){
-  eStop = true;
+  //eStop = true;
 }
