@@ -3,14 +3,14 @@
 // Global Vars
 unsigned long numSteps = 20000; // Microstepping, steps per revolution of the motor
 unsigned int stepInterval = 175; // Used for delayMicroseconds, controls max speed (30 degrees per second)
-unsigned int varRate = 800;//62500;// Acceleration function used for rampup and rampdown (125000/2) This is a 125 ms frequency starting pulse (only moves 10 steps)
+unsigned int varRate = 800; // Used for delayMicroseconds, controls current speed
 
 boolean eStop = false; // Logic for emergency stoppage
 boolean newData = false; // Logic for whether or not there is data to be processed in the serial
 int desiredPos = 0; //Desired cage position after moving (or other desired value for relative motion commands)
 
 int encoderPos = 0; //current position of encoder
-int encoderPrev = 0; //previous position of encoder
+int encoderPrev = 0; //previous position of encoder, CURRENTLY NOT IN USE
 int encoderZero = 0; //zeroed position of the encoder
 int desEncoderPos = encoderPos; //desired position of encoder after moving
 
@@ -44,9 +44,15 @@ const int decRateMin = stepInterval;
 const int decRateSteps = 3;
 const int decRateDelta = accRateDelta;
 
-const int accTotalSteps = (int)((1.0*(accRateMax-accRateMin))/accRateDelta)*accRateSteps;
-const int decTotalSteps = (int)((1.0*(decRateMax-decRateMin))/decRateDelta)*decRateSteps;
+const int accTotalSteps = (int)((1.0*(accRateMax-accRateMin))/accRateDelta)*accRateSteps; //number of steps during accel()
+const int decTotalSteps = (int)((1.0*(decRateMax-decRateMin))/decRateDelta)*decRateSteps; //number of steps during deccel()
 const int accDecSteps = accTotalSteps+decTotalSteps;
+
+
+const int emergencyStopEncoderThreshold = 5; //if the encoder is farther than this many encoder pulses from theoretical, there is a problem
+const int overshootCageFrac = 0.2; //number of cages to stop before desired position (intentional undershoot to stop overshoot)
+const int overshootCorrection = floor(overshootCageFrac*3*numSteps/10); //number of steps to stop before desired position (intentional undershoot to stop overshoot)
+const float nudgeFrac = 0.07; //fraction of a cage to move when nudging
 
 
 void setup() {
@@ -74,10 +80,7 @@ void setup() {
     //Wait until serial is up and running;
   }
 
-  eStop = false;
   startupRoutine(); // moves carousel until it reaches the encoder zero
-
-  
 }
 
 void loop() {
@@ -132,21 +135,15 @@ void loop() {
     if(num>=0 && num<=9){ //moving to a cage position
       //full cage rotations and prev/next encoder positions are already taken care of
       //nudges don't care about encoder position
-      prevPos = desiredPos;
+      prevPos = desiredPos; // this value is used during calibration
       desEncoderPos = (desiredPos*40 + encoderZero)%400;
       Serial.print("Desired Encoder Pos");
       Serial.println(desEncoderPos);
     }
     
     moveCage(num);
-  
+    
     Serial.println("\n\nStopped moving the motor\n");
-    //+20 is to change the zone from position + [0,40] to position + [-20,20]
-    /*
-    currentPos = floor(((encoderPos-encoderZero+20+400)%400)/40.0);
-    Serial.print("\nCurrent Position (after moving):");
-    Serial.println(currentPos);
-    */
     desEncoderPos = encoderPos;
   }
 }
@@ -155,6 +152,9 @@ void loop() {
 // List of Functions
 
 char recvData() {
+  /*
+   * returns the recieved character-65 (so that A is 0, B is 1, etc.)
+   */
   if (Serial.available() > 0) {
     byte datain = Serial.read(); //Reads new data from serial
     newData = true;
@@ -163,14 +163,19 @@ char recvData() {
 }
 
 int getDir() {
+  /*
+   * returns the number of cages to move OR -88 for prev/next OR -77 for full rotations OR -99 for nudges
+   * This output is fed to moveCage
+   * 
+   * This function determines the desired carousel position, desired encoder position and possibly direction
+   */
   // code for determining the desired encoder position and direction from current position
   // flips dirPin HIGH or LOW
   // used in combination with moveCage
 
   //run if input was '[' or ']' for one full IJABC or one full CBAJI rotation
-  // '<' for nudge ABC and '>' for nudge CBA (should be changed)
+  // '<' for nudge ABC and '>' for nudge CBA
   // '+' for one cage ABC and '-' for one cage CBA
-  //whether the direction pins should be high or low requires testing
   
   if(desiredPos == -22){ // +, one right
     digitalWrite(dirPin, HIGH);
@@ -222,12 +227,12 @@ int getDir() {
 
 
   // Unless it's a special case handled above, the carousel should only move for inputs A -- J and a -- j
-  if((desiredPos>=0)&&(desiredPos<=9)){
+  if((desiredPos>=0)&&(desiredPos<=9)){// maps A -- J to 0 -- 9
     encoderZero = mainZero;
     altView = false;
     
     return desiredPos;
-  }else if((desiredPos>=32)&&(desiredPos<=41)){
+  }else if((desiredPos>=32)&&(desiredPos<=41)){// maps a -- j to 0 -- 9
     encoderZero = altZero;
     altView = true;
     
@@ -243,14 +248,18 @@ int getDir() {
 
 
 void moveCage(int numCages) {
+  /*
+   * numCages: number of cages to move OR flag for other types of movement
+   * Interprets the input value and moves the carousel accordingly
+   */
   
   if (numCages >= 0 || numCages == -88) { //move to cage or rotate by one cage
     
-    int encDistance = min(abs(encoderPos-desEncoderPos),400-abs(encoderPos-desEncoderPos)); //values 0-200
-
-    //int tempT = 20;
+    int encDistance = min(abs(encoderPos-desEncoderPos),400-abs(encoderPos-desEncoderPos)); //takes values 0-200
+    
+    
     int tempT = 200;
-    if(encDistance <= tempT){ //direction not set in getDir() since it so short, need to set it here
+    if(encDistance <= tempT){ //find which direction would be shorter and sets dirPin
       if(inRange((desEncoderPos-tempT/2+400)%400,encoderPos,tempT/2)){
         digitalWrite(dirPin, HIGH);
       }else{
@@ -259,18 +268,16 @@ void moveCage(int numCages) {
     }
     int direc = 2*digitalRead(dirPin)-1; // 1 if high, -1 if low
     
-    int overshoot_correction = floor(0.2*3*numSteps/10); //chosen to stop 0.2 cages before desired
     long steps = encDistance * 3 * numSteps/400; //map 0-200 to 0-30000
 
-    if(steps<=overshoot_correction){
+    if(steps<=overshootCorrection){
       Serial.println("\nToo short for overshoot");
       Serial.println(steps);
       moveArb(steps);
     }else{
-      boolean shortMove = moveArb(steps-overshoot_correction);
+      boolean shortMove = moveArb(steps-overshootCorrection);
       
       //correct for over/undershoot
-      //inRange(current,desired,threshold range)
       if(!eStop){
         Serial.println("\nUndershoot correction");
         int theoEnc = encoderPos;
@@ -278,18 +285,10 @@ void moveCage(int numCages) {
         
         if(!shortMove){
           while(!inRange(encoderPos,desEncoderPos,0)) { //while not within _ encoder steps of desired
-            digitalWrite(stepPin, HIGH);
-            delayMicroseconds(decRateMax); // Used for delayMicroseconds, controls max speed
-            digitalWrite(stepPin, LOW);
-            delayMicroseconds(decRateMax);
+            oneStep(decRateMax);
+            
             sCount++;
-
-            if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
-              theoEnc = (theoEnc+direc*5+400)%400;
-              if(!inRange(encoderPos,theoEnc,3)){
-                eStop = true;    
-              }
-            }
+            theoEnc = errorCheck(sCount, theoEnc, direc);
             
             if(eStop){
               break;
@@ -302,18 +301,10 @@ void moveCage(int numCages) {
         }else{
           Serial.println("Very short movement");
           while(!inRange(encoderPos,desEncoderPos,0)) { //while not within _ encoder steps of desired
-            digitalWrite(stepPin, HIGH);
-            delayMicroseconds(varRate); // Used for delayMicroseconds, controls max speed
-            digitalWrite(stepPin, LOW);
-            delayMicroseconds(varRate);
-            sCount++;
+            oneStep(varRate);
             
-            if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
-              theoEnc = (theoEnc+direc*5+400)%400;
-              if(!inRange(encoderPos,theoEnc,3)){
-                eStop = true;    
-              }
-            }
+            sCount++;
+            theoEnc = errorCheck(sCount, theoEnc, direc);
             if(eStop){
               break;
             }
@@ -328,10 +319,9 @@ void moveCage(int numCages) {
       
   }else if(numCages == -77){ //full revolution
     int direc = 2*digitalRead(dirPin)-1; // 1 if high, -1 if low
-    int overshoot_correction = floor(0.2*3*numSteps/10); //chosen to stop 0.2 cages before desired
     long steps = 3 * numSteps;
     
-    moveArb(steps-overshoot_correction);
+    moveArb(steps-overshootCorrection);
 
     int theoEnc = encoderPos;
     long sCount = 0;
@@ -339,18 +329,10 @@ void moveCage(int numCages) {
     //correct for over/undershoot
     Serial.println("\nUndershoot correction");
     while(!inRange(encoderPos,desEncoderPos,1)) { //while not within _ encoder steps of desired
-      digitalWrite(stepPin, HIGH);
-      delayMicroseconds(decRateMax); // Used for delayMicroseconds, controls max speed
-      digitalWrite(stepPin, LOW);
-      delayMicroseconds(decRateMax);
+      oneStep(decRateMax);
+      
       sCount++;
-            
-      if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
-        theoEnc = (theoEnc+direc*5+400)%400;
-        if(!inRange(encoderPos,theoEnc,3)){
-          eStop = true;    
-        }
-      }
+      theoEnc = errorCheck(sCount, theoEnc, direc);
       if(eStop){
         break;
       }
@@ -359,9 +341,8 @@ void moveCage(int numCages) {
       Serial.print("\nERROR. Source: moveCage (full revolution undershoot correction), should have reached ");
       Serial.print(theoEnc);
     }
-  }else if(numCages == -99){ //nudge left or right depending on current stepPin value
-    float frac = 0.07; //ordered to move 0.07 cages
-    int steps = floor(3 * numSteps/10 * frac); //convert cage fraction to steps
+  }else if(numCages == -99){ //nudge left or right depending on current dirPin value
+    int steps = floor(3 * numSteps/10 * nudgeFrac); //convert cage fraction to steps
     moveArb(steps);
   }
 
@@ -372,21 +353,25 @@ void moveCage(int numCages) {
 }
 
 boolean moveArb(long steps) {
+  /*
+   * steps: number of motor steps to move the carousel
+   * Steps the motor "steps" times. Handles acceleration, constant velocity, and deceleration movement.
+   * returns true if very short movement occured, false otherwise
+   * 
+   * As of this version, calculations assume that accRateDelta == decRateDelta == 1
+   * Future versions will need reworking to account for this
+   */
   if(eStop){
     Serial.println("\nERROR. Source: moveArb, previous error");
     return false;
   }
-  
-  //returns true if very short movement occured
-  boolean shortMove = false;
-  int direc = 2*digitalRead(dirPin)-1; // 1 if high, -1 if low
 
   
-  //As of this version, calculations assume that accRateDelta == decRateDelta == 1
-  //Future versions will need reworking to account for this
+  boolean shortMove = false;
+  int direc = 2*digitalRead(dirPin)-1; // 1 if high, -1 if low
   
   
-  if(steps >= accDecSteps){ //"Normal" operation
+  if(steps >= accDecSteps){ //"Normal" operation with acceleration, full speed movement, and deceleration
     Serial.println("\naccel");
     accel();
     Serial.println("\nmovement");
@@ -396,25 +381,15 @@ boolean moveArb(long steps) {
     }
     
     int theoEnc = encoderPos;
-    /*
     Serial.print("\nStarts at: ");
     Serial.println(theoEnc);
-    */
     
     for (unsigned long j = 0; j < (steps-accDecSteps); j++) {
-      digitalWrite(stepPin, HIGH);
-      delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
-      digitalWrite(stepPin, LOW);
-      delayMicroseconds(stepInterval);
-
+      oneStep(stepInterval);
 
       //Error checking
-      if(j%(numSteps*3/80)==0 && j!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
-        theoEnc = (theoEnc+direc*5+400)%400;
-        if(!inRange(encoderPos,theoEnc,3)){
-          eStop = true;    
-        }
-      }
+      theoEnc = errorCheck(j, theoEnc, direc);
+
       if(eStop){
         break;
       }
@@ -431,7 +406,7 @@ boolean moveArb(long steps) {
     }
     
   }else if(steps < accRateSteps*(accRateMax-decRateMax)){ //Special case for very short movement
-    //Movement is too short to reach decMaxRate at any point, so decceleration never happens
+    //Movement is too short to reach decMaxRate at any point, so deceleration never happens
     //Current implementation is to ignore this and just accelerate to the end
     //The highest velocity reached is still slower than that at the end of deccel()
     shortMove = true;
@@ -445,21 +420,14 @@ boolean moveArb(long steps) {
         break;
       }
       for (int i = 0; i < accRateSteps; i++) {
-        digitalWrite(stepPin, HIGH);
-        delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
-        digitalWrite(stepPin, LOW);
-        delayMicroseconds(varRate);
+        oneStep(varRate);
+        
         sCount++;
         if(sCount==steps){
           break;
         }
-
-        if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
-          theoEnc = (theoEnc+direc*5+400)%400;
-          if(!inRange(encoderPos,theoEnc,3)){
-            eStop = true;
-          }
-        }
+        theoEnc = errorCheck(sCount, theoEnc, direc);
+        
         if(eStop){
           break;
         }
@@ -489,20 +457,11 @@ boolean moveArb(long steps) {
       }
       
       for (int i = 0; i < accRateSteps; i++) {
-        digitalWrite(stepPin, HIGH);
-        delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
-        digitalWrite(stepPin, LOW);
-        delayMicroseconds(varRate);
-        sCount++;
+        oneStep(varRate);
         
-        if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
-          theoEnc = (theoEnc+direc*5+400)%400;
-          if(!inRange(encoderPos,theoEnc,3)){
-            eStop = true;
-            Serial.print("\nERROR: ");
-            Serial.println(theoEnc);
-          }
-        }
+        sCount++;
+        theoEnc = errorCheck(sCount, theoEnc, direc);
+        
         if(eStop){
           break;
         }
@@ -521,18 +480,11 @@ boolean moveArb(long steps) {
       }
       
       for (int i = 0; i < decRateSteps; i++) {
-        digitalWrite(stepPin, HIGH);
-        delayMicroseconds(varRate);
-        digitalWrite(stepPin, LOW);
-        delayMicroseconds(varRate);
+        oneStep(varRate);
         sCount++;
+        theoEnc = errorCheck(sCount, theoEnc, direc);
+
         
-        if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
-          theoEnc = (theoEnc+direc*5+400)%400;
-          if(!inRange(encoderPos,theoEnc,3)){
-            eStop = true;
-          }
-        }
         if(eStop){
           break;
         }
@@ -553,6 +505,9 @@ boolean moveArb(long steps) {
 }
 
 void accel() {
+  /*
+   * Brings the carousel from stopped to full speed
+   */
   if(eStop){
     Serial.println("\nERROR. Source: accel, previous error ");
     return;
@@ -565,19 +520,11 @@ void accel() {
   varRate = accRateMax;
   while (varRate > accRateMin) {
     for (int i = 0; i < accRateSteps; i++) {
-      digitalWrite(stepPin, HIGH);
-      delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
-      digitalWrite(stepPin, LOW);
-      delayMicroseconds(varRate);
-      sCount++;
+      oneStep(varRate);
       
-      if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
-        theoEnc = (theoEnc+direc*5+400)%400;
-        if(!inRange(encoderPos,theoEnc,3)){
-          eStop = true;
-          Serial.println("\nERROR");
-        }
-      }
+      sCount++;
+      theoEnc = errorCheck(sCount, theoEnc, direc);
+
       if(eStop){
         break;
       }
@@ -594,6 +541,10 @@ void accel() {
 }
 
 void deccel() {
+  /*
+   * Brings the carousel from full speed movement to slower movement
+   */
+  
   if(eStop){
     Serial.println("\nERROR. Source: deccel, previous error ");
     return;
@@ -602,10 +553,8 @@ void deccel() {
   varRate = decRateMin;
   while (varRate < decRateMax) {
     for (int i = 0; i < decRateSteps; i++) {
-      digitalWrite(stepPin, HIGH);
-      delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
-      digitalWrite(stepPin, LOW);
-      delayMicroseconds(varRate);
+      oneStep(varRate);
+      
       if(eStop){
         break;
       }
@@ -621,14 +570,22 @@ void deccel() {
 }
 
 boolean inRange(int cur, int des, int t){
-  //cur is current encoder position
-  //des is desired encoder position
-  //t is how far off cur can be from des (modulo 400)
-  //can be modified to different control scheme by changing both 400s
+  /*
+   * cur: current encoder position
+   * des: desired encoder position
+   * t: how far off cur can be from des (modulo 400)
+   * returns true if cur is in range of des, false otherwise
+   */
   return (abs((cur-des+t+400)%400-t)<=t);
 }
 
 void updateEncoder() {
+  /*
+   * Updates the encoder position based on a 200 pulse/revolution quadrature encoder
+   * The team chose to use rising and falling edges of a channel, rather than just rising
+   * This was to remove ambiguity of position and increase precision
+   * The Z channel only pulses once per revolution
+   */
   encoderPrev = encoderPos;
   boolean A = (digitalRead(outputA)==1);
   boolean B = (digitalRead(outputB)==1);
@@ -655,6 +612,7 @@ void updateEncoder() {
   }
 
 
+  //This block of commented out code MAY be necessary to include for proper functionality
   /*
   if(encoderPos%10==0)
     Serial.println();
@@ -672,6 +630,10 @@ void updateEncoder() {
 }
 
 void emergencyStop(){
+  /*
+   * Handles the emergency stop functionality. If the carousel is not moving correctly, or if the button is hit, eStop is set to true, and this usually occurs after that
+   */
+   
   Serial.println("\nERROR. Make the carousel safe to operate, reset, then recalibrate");
   digitalWrite(relayPin,HIGH);
   digitalWrite(enPin,HIGH);
@@ -708,9 +670,11 @@ void emergencyStop(){
 }
 
 void startupRoutine(){
-  if(eStop){
-    Serial.println("Previous error");
-  }
+  /*
+   * Runs on startupt before any other command can be input.
+   * Waits for confirmation to begin, then rotates the carousel until it reaches the zero reset
+   * It then depowers the motor and waits for the user to move it to the A (main view) position
+   */
   while(true){  
     eStop = false;
     newData = false;
@@ -723,23 +687,18 @@ void startupRoutine(){
       }
       newData = false;
     }
-    eStop = false;
     
+    delay(10);
     
-    bool fin = false;
+    bool fin = false; //flag for if encoder has reached its zero reset
     digitalWrite(dirPin,HIGH);
     digitalWrite(enPin,LOW);
-
-    Serial.println("Before accel");
-    //Serial.println(eStop);
-
+    
     varRate = accRateMax;
     while (varRate > accRateMin) {
       for (int i = 0; i < accRateSteps; i++) {
-        digitalWrite(stepPin, HIGH);
-        delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
-        digitalWrite(stepPin, LOW);
-        delayMicroseconds(varRate);
+        oneStep(varRate);
+        
         if(digitalRead(outputZ)==0){
           fin = true;
         }
@@ -755,15 +714,9 @@ void startupRoutine(){
         break;
       }
     }
-
-    Serial.println("After accel");
-    //Serial.println(eStop);
   
     while (!fin) {
-      digitalWrite(stepPin, HIGH);
-      delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
-      digitalWrite(stepPin, LOW);
-      delayMicroseconds(stepInterval);
+      oneStep(stepInterval);
       
       if(digitalRead(outputZ)==0){
         fin = true;
@@ -772,17 +725,13 @@ void startupRoutine(){
         break;
       }
     }
-
-    Serial.println("After move");
-    //Serial.println(eStop);
+  
     
     varRate = decRateMin;
     while (varRate < decRateMax && (digitalRead(enPin)==0) ) {
       for (int i = 0; i < decRateSteps; i++) {
-        digitalWrite(stepPin, HIGH);
-        delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
-        digitalWrite(stepPin, LOW);
-        delayMicroseconds(varRate);
+        oneStep(varRate);
+        
         if(eStop){
           break;
         }
@@ -794,10 +743,7 @@ void startupRoutine(){
       varRate += decRateDelta;
     }
     digitalWrite(enPin,HIGH);
-
-    Serial.println("After deccel");
-    //Serial.println(eStop);
-    
+  
     if(!eStop){
       newData = false;
       temp = 0;
@@ -819,13 +765,50 @@ void startupRoutine(){
       delay(100);
       return;
     }else{
-      Serial.println("error in initial calibration");
       emergencyStop();
       eStop = false;
     }
   }
 }
 
+
+int errorCheck(long sCount, int theoEnc, int direc){
+  /* 
+   * sCount: current step count
+   * theoEnc: what the encoder should read (with error bars) under correct operation
+   * direc: 1 or -1, depending on which direction the motor should be rotating
+   * 
+   * Takes in the previous theoretical encoder position, the step count, and direction, and updates the theoretical encoder position if necessary
+   * If the encoder position is not in bounds, it sets the error flag to true
+   */
+  int theoEncNew = theoEnc;
+  if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
+    theoEncNew = (theoEnc+direc*5+400)%400;
+    if(!inRange(encoderPos,theoEncNew,emergencyStopEncoderThreshold)){
+      eStop = true;
+      Serial.println("\nERROR");
+    }
+  }
+
+  return theoEncNew;
+}
+
+void oneStep(int r){
+  /*
+   * r: delay (in microseconds) between toggling the pin
+   * Makes the motor step once.
+   */
+  digitalWrite(stepPin, HIGH);
+  delayMicroseconds(r);
+  digitalWrite(stepPin, LOW);
+  delayMicroseconds(r);
+}
+
 void buttonPush(){
-  eStop = true;
+  /*
+   * CURRENTLY DOES NOTHING DUE TO HARDWARE CONCERNS MAKING THE STOP BUTTON UNVIABLE
+   * Sets the emergency stop flag to true
+   */
+  
+  //eStop = true;
 }
