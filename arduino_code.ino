@@ -74,6 +74,7 @@ void setup() {
     //Wait until serial is up and running;
   }
 
+  eStop = false;
   startupRoutine(); // moves carousel until it reaches the encoder zero
 
   
@@ -395,8 +396,10 @@ boolean moveArb(long steps) {
     }
     
     int theoEnc = encoderPos;
+    /*
     Serial.print("\nStarts at: ");
     Serial.println(theoEnc);
+    */
     
     for (unsigned long j = 0; j < (steps-accDecSteps); j++) {
       digitalWrite(stepPin, HIGH);
@@ -570,7 +573,6 @@ void accel() {
       
       if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
         theoEnc = (theoEnc+direc*5+400)%400;
-        Serial.println("\nChecking...");
         if(!inRange(encoderPos,theoEnc,3)){
           eStop = true;
           Serial.println("\nERROR");
@@ -651,7 +653,9 @@ void updateEncoder() {
       //Serial.println("No reset required");
     }
   }
-  
+
+
+  /*
   if(encoderPos%10==0)
     Serial.println();
   if(encoderPos>=0)
@@ -664,7 +668,7 @@ void updateEncoder() {
   Serial.print("_A");
   Serial.print(digitalRead(outputA));
   Serial.print(" ");
-  
+  */
 }
 
 void emergencyStop(){
@@ -704,85 +708,122 @@ void emergencyStop(){
 }
 
 void startupRoutine(){
-  
-  newData = false;
-  digitalWrite(enPin,HIGH);
-  int temp = 0;
-  while(temp != -23){ //wait until '*' is recieved
-    Serial.println("Press calibrate to begin");
-    while (newData == false) {
-      temp = recvData();
-    }
-    newData = false;
+  if(eStop){
+    Serial.println("Previous error");
   }
-  
+  while(true){  
+    eStop = false;
+    newData = false;
+    digitalWrite(enPin,HIGH);
+    int temp = 0;
+    while(temp != -23){ //wait until '*' is recieved
+      Serial.println("Press calibrate to begin");
+      while (newData == false) {
+        temp = recvData();
+      }
+      newData = false;
+    }
+    eStop = false;
+    
+    
+    bool fin = false;
+    digitalWrite(dirPin,HIGH);
+    digitalWrite(enPin,LOW);
 
+    Serial.println("Before accel");
+    //Serial.println(eStop);
+
+    varRate = accRateMax;
+    while (varRate > accRateMin) {
+      for (int i = 0; i < accRateSteps; i++) {
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(varRate);
+        if(digitalRead(outputZ)==0){
+          fin = true;
+        }
+        if(eStop){
+          break;
+        }
+      }
+      varRate -= accRateDelta;
+      if(fin){
+        digitalWrite(enPin,HIGH);
+      }
+      if(eStop){
+        break;
+      }
+    }
+
+    Serial.println("After accel");
+    //Serial.println(eStop);
   
-  bool fin = false;
-  digitalWrite(dirPin,HIGH);
-  digitalWrite(enPin,LOW);
-  
-  varRate = accRateMax;
-  while (varRate > accRateMin) {
-    for (int i = 0; i < accRateSteps; i++) {
+    while (!fin) {
       digitalWrite(stepPin, HIGH);
-      delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
+      delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
       digitalWrite(stepPin, LOW);
-      delayMicroseconds(varRate);
+      delayMicroseconds(stepInterval);
+      
       if(digitalRead(outputZ)==0){
         fin = true;
       }
+      if(eStop){
+        break;
+      }
     }
-    varRate -= accRateDelta;
-    if(fin){
-      digitalWrite(enPin,HIGH);
-    }
-  }
 
-  while (!fin) {
-    digitalWrite(stepPin, HIGH);
-    delayMicroseconds(stepInterval);// Used for delayMicroseconds, controls max speed
-    digitalWrite(stepPin, LOW);
-    delayMicroseconds(stepInterval);
+    Serial.println("After move");
+    //Serial.println(eStop);
     
-    if(digitalRead(outputZ)==0){
-      fin = true;
+    varRate = decRateMin;
+    while (varRate < decRateMax && (digitalRead(enPin)==0) ) {
+      for (int i = 0; i < decRateSteps; i++) {
+        digitalWrite(stepPin, HIGH);
+        delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
+        digitalWrite(stepPin, LOW);
+        delayMicroseconds(varRate);
+        if(eStop){
+          break;
+        }
+      }
+      
+      if(eStop){
+        break;
+      }
+      varRate += decRateDelta;
     }
-  }
+    digitalWrite(enPin,HIGH);
 
-  
-  varRate = decRateMin;
-  while (varRate < decRateMax && (digitalRead(enPin)==0) ) {
-    for (int i = 0; i < decRateSteps; i++) {
-      digitalWrite(stepPin, HIGH);
-      delayMicroseconds(varRate);// Used for delayMicroseconds, controls max speed
-      digitalWrite(stepPin, LOW);
-      delayMicroseconds(varRate);
+    Serial.println("After deccel");
+    //Serial.println(eStop);
+    
+    if(!eStop){
+      newData = false;
+      temp = 0;
+      while(temp != -23){ //wait until '*' is recieved
+        Serial.println("\nPress calibrate when facing A (main view)");
+        while (newData == false) {
+          temp = recvData();
+        }
+        newData = false;
+      }
+      
+      digitalWrite(enPin, LOW);  
+      encoderZero = encoderPos;
+      mainZero = encoderZero; //first view is main view
+      altZero = (encoderZero+20+400)%400; //default alternate view is half cage rotation
+      Serial.print("\nCurrently at A (main view)\nZero is at ");
+      Serial.println(encoderZero);
+      varRate = 800;
+      delay(100);
+      return;
+    }else{
+      Serial.println("error in initial calibration");
+      emergencyStop();
+      eStop = false;
     }
-    varRate += decRateDelta;
   }
-  
-  digitalWrite(enPin,HIGH);
-
-  newData = false;
-  temp = 0;
-  while(temp != -23){ //wait until '*' is recieved
-    Serial.println("\nPress calibrate when facing A (main view)");
-    while (newData == false) {
-      temp = recvData();
-    }
-    newData = false;
-  }
-  
-  
-  digitalWrite(enPin, LOW);  
-  encoderZero = encoderPos;
-  mainZero = encoderZero; //first view is main view
-  altZero = (encoderZero+20+400)%400; //default alternate view is half cage rotation
-  Serial.print("\nCurrently at A (main view)\nZero is at ");
-  Serial.println(encoderZero);
-  varRate = 800;
-  delay(100);
 }
 
 void buttonPush(){
