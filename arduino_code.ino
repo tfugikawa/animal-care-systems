@@ -4,6 +4,13 @@
 unsigned long numSteps = 20000; // Microstepping, steps per revolution of the motor
 unsigned int stepInterval = 175; // Used for delayMicroseconds, controls max speed (30 degrees per second)
 unsigned int varRate = 800; // Used for delayMicroseconds, controls current speed
+unsigned int initialVarRate = varRate;
+
+const float gR = 3;//Gear ratio, carousel gear/motor gear
+const int encoderPulsesRev = 200;//Encoder pulses per revolution
+const int encPR = 2*encoderPulsesRev;//Rising and falling edges per revolution (encoder "ticks")
+const int cN = 10;//Number of cages
+const float tC = (1.0*encPR)/(1.0*cN);//Number of encoder ticks per cage
 
 boolean eStop = false; // Logic for emergency stoppage
 boolean newData = false; // Logic for whether or not there is data to be processed in the serial
@@ -51,8 +58,9 @@ const int accDecSteps = accTotalSteps+decTotalSteps;
 
 const int emergencyStopEncoderThreshold = 5; //if the encoder is farther than this many encoder pulses from theoretical, there is a problem
 const int overshootCageFrac = 0.2; //number of cages to stop before desired position (intentional undershoot to stop overshoot)
-const int overshootCorrection = floor(overshootCageFrac*3*numSteps/10); //number of steps to stop before desired position (intentional undershoot to stop overshoot)
+const int overshootCorrection = floor(overshootCageFrac*gR*numSteps/(1.0*cN)); //number of steps to stop before desired position (intentional undershoot to stop overshoot)
 const float nudgeFrac = 0.07; //fraction of a cage to move when nudging
+
 
 
 void setup() {
@@ -105,7 +113,7 @@ void loop() {
   if(desiredPos == -23){ //this block is run if the input was '*' for calibration
 
     if(altView){ // previously issued command was an alternate view
-      altZero = (encoderPos-prevPos*40+400)%400;
+      altZero = ((int)(encoderPos-prevPos*tC+encPR))%encPR;
       Serial.print("\nSet ");
       Serial.print((char)(prevPos+65));
       Serial.print(" in alternate view to: ");
@@ -113,7 +121,7 @@ void loop() {
       Serial.print(" and set alternate view 0 to: ");
       Serial.println(altZero);
     }else{ // previously issued command was a main view
-      mainZero = (encoderPos-prevPos*40+400)%400;
+      mainZero = ((int)(encoderPos-prevPos*tC+encPR))%encPR;
       Serial.print("\nSet ");
       Serial.print((char)(prevPos+65));
       Serial.print(" in main view to: ");
@@ -132,11 +140,11 @@ void loop() {
     Serial.print("Interpreted as: ");
     Serial.println(desiredPos);
   
-    if(num>=0 && num<=9){ //moving to a cage position
+    if(num>=0 && num<=cN-1){ //moving to a cage position
       //full cage rotations and prev/next encoder positions are already taken care of
       //nudges don't care about encoder position
       prevPos = desiredPos; // this value is used during calibration
-      desEncoderPos = (desiredPos*40 + encoderZero)%400;
+      desEncoderPos = ((int)(desiredPos*tC + encoderZero))%encPR;
       Serial.print("Desired Encoder Pos");
       Serial.println(desEncoderPos);
     }
@@ -173,17 +181,17 @@ int getDir() {
   // flips dirPin HIGH or LOW
   // used in combination with moveCage
 
-  //run if input was '[' or ']' for one full IJABC or one full CBAJI rotation
+  //run if input was '[' or ']' for one full IJABC or one full CBAJI rotation or similar
   // '<' for nudge ABC and '>' for nudge CBA
   // '+' for one cage ABC and '-' for one cage CBA
   
   if(desiredPos == -22){ // +, one right
     digitalWrite(dirPin, HIGH);
     
-    int currentPos = floor(((encoderPos-encoderZero+20+400)%400)/40.0);
-    desiredPos = (currentPos+1 + 20)%10;
+    int currentPos = floor(((encoderPos-encoderZero+tC/2+encPR)%encPR)/tC);
+    desiredPos = ((int)(currentPos+1 + tC/2))%cN;
     
-    desEncoderPos = (encoderPos+40)%400;
+    desEncoderPos = ((int)(encoderPos+tC))%encPR;
     Serial.print("\nDesired Encoder Pos");
     Serial.println(desEncoderPos);
     
@@ -191,10 +199,10 @@ int getDir() {
   }else if(desiredPos == -20){ // -, one left
     digitalWrite(dirPin, LOW);
     
-    int currentPos = floor(((encoderPos-encoderZero+20+400)%400)/40.0);
-    desiredPos = (currentPos-1 + 20)%10;
+    int currentPos = floor(((encoderPos-encoderZero+tC/2+encPR)%encPR)/tC);
+    desiredPos = (currentPos-1 + tC/2)%cN;
     
-    desEncoderPos = (encoderPos-40+400)%400;
+    desEncoderPos = ((int)(encoderPos-tC+encPR))%encPR;
     Serial.print("\nDesired Encoder Pos");
     Serial.println(desEncoderPos);
     
@@ -202,7 +210,7 @@ int getDir() {
   }else if(desiredPos == 26){ // [, full rotation CW
     digitalWrite(dirPin, HIGH);
     
-    desiredPos = floor(((encoderPos-encoderZero+20+400)%400)/40.0);
+    desiredPos = floor(((encoderPos-encoderZero+tC/2+encPR)%encPR)/tC);
     
     desEncoderPos = encoderPos;
     Serial.print("\nDesired Encoder Pos");
@@ -211,7 +219,7 @@ int getDir() {
   }else if(desiredPos == 28){ // ], full rotation CCW
     digitalWrite(dirPin, LOW);
     
-    desiredPos = floor(((encoderPos-encoderZero+20+400)%400)/40.0);
+    desiredPos = floor(((encoderPos-encoderZero+tC/2+encPR)%encPR)/tC);
     
     desEncoderPos = encoderPos;
     Serial.print("\nDesired Encoder Pos");
@@ -226,13 +234,13 @@ int getDir() {
   }
 
 
-  // Unless it's a special case handled above, the carousel should only move for inputs A -- J and a -- j
-  if((desiredPos>=0)&&(desiredPos<=9)){// maps A -- J to 0 -- 9
+  // Unless it's a special case handled above, the carousel should only move for inputs A -- J and a -- j or similar
+  if((desiredPos>=0)&&(desiredPos<=cN-1)){// maps A -- J to 0 -- 9 or similar
     encoderZero = mainZero;
     altView = false;
     
     return desiredPos;
-  }else if((desiredPos>=32)&&(desiredPos<=41)){// maps a -- j to 0 -- 9
+  }else if((desiredPos>=32)&&(desiredPos<=cN+32-1)){// maps a -- j to 0 -- 9 or similar
     encoderZero = altZero;
     altView = true;
     
@@ -255,12 +263,12 @@ void moveCage(int numCages) {
   
   if (numCages >= 0 || numCages == -88) { //move to cage or rotate by one cage
     
-    int encDistance = min(abs(encoderPos-desEncoderPos),400-abs(encoderPos-desEncoderPos)); //takes values 0-200
+    int encDistance = min(abs(encoderPos-desEncoderPos),encPR-abs(encoderPos-desEncoderPos)); //takes values 0 -- encPR/2
     
     
-    int tempT = 200;
+    int tempT = (int)(encPR/2.0);
     if(encDistance <= tempT){ //find which direction would be shorter and sets dirPin
-      if(inRange((desEncoderPos-tempT/2+400)%400,encoderPos,tempT/2)){
+      if(inRange((desEncoderPos-tempT/2+encPR)%encPR,encoderPos,tempT/2)){
         digitalWrite(dirPin, HIGH);
       }else{
         digitalWrite(dirPin, LOW);
@@ -268,7 +276,7 @@ void moveCage(int numCages) {
     }
     int direc = 2*digitalRead(dirPin)-1; // 1 if high, -1 if low
     
-    long steps = encDistance * 3 * numSteps/400; //map 0-200 to 0-30000
+    long steps = (int)(encDistance * gR * numSteps/(1.0*encPR)); //map 0--encPR/2 to 0-gR*numSteps/2
 
     if(steps<=overshootCorrection){
       Serial.println("\nToo short for overshoot");
@@ -319,7 +327,7 @@ void moveCage(int numCages) {
       
   }else if(numCages == -77){ //full revolution
     int direc = 2*digitalRead(dirPin)-1; // 1 if high, -1 if low
-    long steps = 3 * numSteps;
+    long steps = gR * numSteps;
     
     moveArb(steps-overshootCorrection);
 
@@ -342,7 +350,7 @@ void moveCage(int numCages) {
       Serial.print(theoEnc);
     }
   }else if(numCages == -99){ //nudge left or right depending on current dirPin value
-    int steps = floor(3 * numSteps/10 * nudgeFrac); //convert cage fraction to steps
+    int steps = floor(gR * numSteps/(1.0*cN) * nudgeFrac); //convert cage fraction to steps
     moveArb(steps);
   }
 
@@ -576,7 +584,7 @@ boolean inRange(int cur, int des, int t){
    * t: how far off cur can be from des (modulo 400)
    * returns true if cur is in range of des, false otherwise
    */
-  return (abs((cur-des+t+400)%400-t)<=t);
+  return (abs((cur-des+t+encPR)%encPR-t)<=t);
 }
 
 void updateEncoder() {
@@ -597,7 +605,7 @@ void updateEncoder() {
   }else{
     encoderPos--;
   }
-  encoderPos = (encoderPos+400)%400;
+  encoderPos = (encoderPos+encPR)%encPR;
 
   //If Z is low and A is high, reached the 0 position
   if(A && !Z){
@@ -758,10 +766,10 @@ void startupRoutine(){
       digitalWrite(enPin, LOW);  
       encoderZero = encoderPos;
       mainZero = encoderZero; //first view is main view
-      altZero = (encoderZero+20+400)%400; //default alternate view is half cage rotation
+      altZero = ((int)(encoderZero+tC/2.0+encPR))%encPR; //default alternate view is half cage rotation
       Serial.print("\nCurrently at A (main view)\nZero is at ");
       Serial.println(encoderZero);
-      varRate = 800;
+      varRate = initialVarRate;
       delay(100);
       return;
     }else{
@@ -781,9 +789,10 @@ int errorCheck(long sCount, int theoEnc, int direc){
    * Takes in the previous theoretical encoder position, the step count, and direction, and updates the theoretical encoder position if necessary
    * If the encoder position is not in bounds, it sets the error flag to true
    */
+  float revFrac = 1.0/80.0;//Fraction of a revolution traveled between each check
   int theoEncNew = theoEnc;
-  if(sCount%(numSteps*3/80)==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses
-    theoEncNew = (theoEnc+direc*5+400)%400;
+  if(sCount%((int)(numSteps*gR*revFrac))==0 && sCount!=0){ // theoretical 1/80th of a revolution = 5 encoder pulses for 400 p/r encoder
+    theoEncNew = ((int)(theoEnc+direc*encPR*revFrac+encPR))%encPR;
     if(!inRange(encoderPos,theoEncNew,emergencyStopEncoderThreshold)){
       eStop = true;
       Serial.println("\nERROR");
