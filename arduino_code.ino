@@ -4,6 +4,7 @@
 unsigned long numSteps = 20000; // Microstepping, steps per revolution of the motor
 unsigned int stepInterval = 175; // Used for delayMicroseconds, controls max speed (30 degrees per second)
 unsigned int varRate = 800; // Used for delayMicroseconds, controls current speed
+unsigned int initialVarRate = varRate;
 
 boolean eStop = false; // Logic for emergency stoppage
 boolean newData = false; // Logic for whether or not there is data to be processed in the serial
@@ -761,7 +762,7 @@ void startupRoutine(){
       altZero = (encoderZero+20+400)%400; //default alternate view is half cage rotation
       Serial.print("\nCurrently at A (main view)\nZero is at ");
       Serial.println(encoderZero);
-      varRate = 800;
+      varRate = initialVarRate;
       delay(100);
       return;
     }else{
